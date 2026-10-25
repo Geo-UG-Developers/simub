@@ -16,7 +16,7 @@ export interface Reporte {
 }
 export interface Detalle extends Reporte {
   comentario: string | null; nombre: string | null; telefono: string | null; anonimo: boolean; precision_m: number | null;
-  fotos: string[]; puede_deshacer: boolean; historial: { estado: Estado; actor: string | null; en: string }[];
+  fotos: string[]; puede_deshacer: boolean; tg_message_id: number | null; historial: { estado: Estado; actor: string | null; en: string }[];
   agregados: { texto: string; en: string }[]; parte: Parte | null;
 }
 export interface Parte {

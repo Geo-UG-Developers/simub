@@ -2,7 +2,7 @@
 // cambiar estado / deshacer (mismas reglas que el bot) y notificar cambios en revisiones.
 import { CORS, db, json } from '../_shared/servicios.ts';
 import { ES_CIERRE, escapar, fechaMx, type Estado } from '../_shared/mensajes.ts';
-import { actualizarAlerta, avisarRevision, pedirParte } from '../_shared/alerta.ts';
+import { actualizarAlerta, avisarRevision, datosAlerta, enviarAlerta, pedirParte, primeraFoto } from '../_shared/alerta.ts';
 import { enviarAvisos } from '../_shared/avisos.ts';
 
 const ESTADOS: Estado[] = ['visto', 'en_camino', 'atendiendo', 'cerrado', 'falso'];
@@ -35,6 +35,13 @@ Deno.serve(async (req) => {
     if (error) return json({ error: error.message }, 409);
     await actualizarAlerta(b.reporte);
     return json({ ok: true });
+  }
+  if (b.accion === 'reenviar') {   // reporte que llegó cuando el grupo aún no estaba vinculado
+    const d = await datosAlerta(b.reporte);
+    if (!d) return json({ error: 'no_existe' }, 404);
+    await enviarAlerta(b.reporte, await primeraFoto(d.fotos?.[0]));
+    const despues = await datosAlerta(b.reporte);
+    return despues?.tg_message_id ? json({ ok: true }) : json({ error: 'sin_grupo' }, 409);
   }
   if (b.accion === 'revision') {   // el panel ya guardó el cambio con su RPC; aquí solo avisamos
     const { data: v } = await db.from('revisiones').select('estado, fecha, asignado').eq('id', b.revision).maybeSingle();

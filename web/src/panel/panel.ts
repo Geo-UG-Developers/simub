@@ -7,6 +7,7 @@ import { I } from '../iconos';
 import { FORMULARIOS, MOTIVOS_REVISION, ORDEN_TIPOS } from '../formularios';
 import type { Estado } from '../api';
 import { columnas, horizontales } from './graficas';
+import { entregarPdf, partePdf } from './pdf';
 import {
   accion, actualizar, cerrarRevision, codigos, dbp, detalle, guardarConfig, guardarParte, informe, insertar, proponerFecha,
   reportes, revisiones, tabla, urlsFotos, yo, type Detalle, type Informe, type Parte, type Reporte, type Revision, type Yo,
@@ -309,6 +310,7 @@ async function pintarDetalle(id: string, centrar: boolean) {
     ${confirmando ? `<div class="confirmar"><b>¿Confirmas ${confirmando === 'cerrado' ? 'CERRAR' : 'marcar como FALSO'} este reporte?</b>
       <div><button class="btn rojo" id="si">Sí, confirmar</button><button class="btn" id="no">Cancelar</button></div></div>` : ''}
     ${d.puede_deshacer ? '<button class="btn tenue-btn" id="deshacer">Deshacer último cambio (2 min)</button>' : ''}
+    ${!d.tg_message_id && !ES_CIERRE(d.estado) ? '<button class="btn" id="reenviar">Enviar al grupo de Telegram</button>' : ''}
     ${d.estado === 'cerrado' ? `<a class="btn ${d.parte ? '' : 'primario'}" href="#parte/${d.id}">${d.parte ? 'Ver o editar parte de servicio' : 'Llenar parte de servicio'}</a>` : ''}
     <h3>Historial</h3><ol class="hist"><li><b>Enviado</b> · ${horaCorta(d.creado_en)}</li>${d.historial.map((h) => `<li><b>${ESTADO[h.estado].txt}</b>${h.actor ? ` por ${esc(h.actor)}` : ''} · ${horaCorta(h.en)}</li>`).join('')}</ol>`;
   urlsFotos(d.fotos).then((us) => { const e = document.getElementById('fotos'); if (e) e.innerHTML = us.map((u) => `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="Foto del reporte"></a>`).join(''); });
@@ -322,6 +324,10 @@ async function pintarDetalle(id: string, centrar: boolean) {
   }));
   document.getElementById('si')?.addEventListener('click', () => cambiar(confirmando!));
   document.getElementById('no')?.addEventListener('click', () => { confirmando = null; pintarDetalle(id, false); });
+  document.getElementById('reenviar')?.addEventListener('click', async () => {
+    try { await accion({ accion: 'reenviar', reporte: id }); aviso('Enviado al grupo de alertas.'); } catch { aviso('No se pudo enviar. ¿Está vinculado el grupo?', true); }
+    pintarDetalle(id, false);
+  });
   document.getElementById('deshacer')?.addEventListener('click', async () => {
     try { await accion({ accion: 'deshacer', reporte: id }); aviso('Cambio deshecho.'); } catch (e) { aviso(ERRORES[(e as Error).message] ?? 'No se pudo deshacer.', true); }
     pintarDetalle(id, false);
@@ -377,22 +383,36 @@ async function vistaParte(id: string) {
     <div class="firma solo-impresion"><span>Firma del responsable</span></div>
     <div class="pie-parte no-imprimir">
       <button class="btn primario" type="submit">Guardar parte</button>
-      <button class="btn" type="button" id="imprimir">Guardar PDF / imprimir</button>
+      <button class="btn" type="button" id="pdf-parte">Guardar y descargar PDF</button>
+      <button class="btn tenue-btn" type="button" id="imprimir">Imprimir</button>
       ${d.parte?.actualizado_en ? `<span class="tenue">Guardado ${fecha(d.parte.actualizado_en)}</span>` : ''}</div>
   </form>`;
   const form = $<HTMLFormElement>('form-parte');
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
+  const recolectar = () => {
     const fd = new FormData(form);
     const otros = String(fd.get('personal_otros') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
     const datos: Record<string, unknown> = {};
     for (const k of ['unidad', 'acciones', 'agua_litros', 'extintores', 'lesionados', 'traslados', 'danos', 'causa', 'autoridades', 'folio_911', 'observaciones', 'responsable']) datos[k] = String(fd.get(k) ?? '').trim();
     for (const k of ['hora_salida', 'hora_llegada', 'hora_retorno']) { const x = String(fd.get(k) ?? ''); datos[k] = x ? new Date(x).toISOString() : ''; }
     datos.personal = [...fd.getAll('personal').map(String), ...otros];
-    try { await guardarParte(id, datos); aviso('Parte de servicio guardado.'); vistaParte(id); }
-    catch (err) { aviso(ERRORES[(err as Error).message] ?? 'No se pudo guardar.', true); }
-  });
+    return datos;
+  };
+  const guardar = async () => {
+    try { await guardarParte(id, recolectar()); return true; }
+    catch (err) { aviso(ERRORES[(err as Error).message] ?? 'No se pudo guardar.', true); return false; }
+  };
+  form.addEventListener('submit', async (e) => { e.preventDefault(); if (await guardar()) { aviso('Parte de servicio guardado.'); vistaParte(id); } });
   $('imprimir').addEventListener('click', () => window.print());
+  $('pdf-parte').addEventListener('click', async () => {
+    const b = $<HTMLButtonElement>('pdf-parte'); b.disabled = true; b.textContent = 'Generando PDF…';
+    if (await guardar()) {
+      const datos = recolectar();
+      const txt = Object.fromEntries(Object.entries(datos).map(([k, x]) => [k, Array.isArray(x) ? x.join(', ') : String(x ?? '')]));
+      try { const { blob, nombre } = await partePdf(d!, txt, datos.personal as string[], `${BASE}escudo-192.png`); await entregarPdf(blob, nombre); aviso('Parte guardado y PDF listo.'); }
+      catch { aviso('No se pudo generar el PDF.', true); }
+    }
+    b.disabled = false; b.textContent = 'Guardar y descargar PDF';
+  });
 }
 
 // ================================================================ AGENDA DE REVISIONES
