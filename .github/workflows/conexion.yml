@@ -33,8 +33,8 @@ jobs:
       - name: 4 · Contraseña de la base de datos
         run: |
           mkdir -p supabase/migrations
-          supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" > out.txt 2>&1; a=$?
-          supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" >> out.txt 2>&1; b=$?
+          supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" > out.txt 2>&1 && a=0 || a=$?
+          supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" >> out.txt 2>&1 && b=0 || b=$?
           sed -i "s/$SUPABASE_DB_PASSWORD/***/g" out.txt
           tail -12 out.txt | tr '\n' ' ' | cut -c1-900 | sed 's/^/::notice title=salida::/'
           echo
