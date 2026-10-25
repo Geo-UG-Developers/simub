@@ -4,38 +4,22 @@ Using access token from env var...
 Supabase CLI 2.122.0
 Using profile: supabase (supabase.co)
 Using access token from env var...
-2026/10/25 20:27:20 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
-2026/10/25 20:27:21 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
-2026/10/25 20:27:22 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
-2026/10/25 20:27:22 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
-2026/10/25 20:27:22 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
-2026/10/25 20:27:22 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
-2026/10/25 20:27:22 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
+2026/10/25 20:32:20 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
+2026/10/25 20:32:20 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
+2026/10/25 20:32:21 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
+2026/10/25 20:32:21 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
+2026/10/25 20:32:21 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
+2026/10/25 20:32:22 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
+2026/10/25 20:32:22 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
 Finished supabase link.
 Connecting to remote database...
-Do you want to push these migrations to the remote database?
- • 20261026000100_esquema.sql
- • 20261026000200_funciones.sql
- • 20261026000300_panel_seguridad.sql
- • 20261026000400_panel_codigos.sql
- [Y/n] y
-Applying migration 20261026000100_esquema.sql...
-Applying migration 20261026000200_funciones.sql...
-Applying migration 20261026000300_panel_seguridad.sql...
-Applying migration 20261026000400_panel_codigos.sql...
-Do you want to seed the remote database with these files?
- • supabase/seed/00_base.sql
- • supabase/seed/90_demo.sql
- [Y/n] y
-Seeding data from supabase/seed/00_base.sql...
-Seeding data from supabase/seed/90_demo.sql...
-Finished supabase db push.
-Uploading asset (panel): supabase/functions/_shared/alerta.ts
-Deploying Function: reportar
-Uploading asset (reportar): supabase/functions/reportar/index.ts
+Remote database is up to date.
 Uploading asset (reportar): supabase/functions/_shared/mensajes.ts
 Uploading asset (reportar): supabase/functions/_shared/alerta.ts
 Uploading asset (reportar): supabase/functions/_shared/servicios.ts
+Deploying Function: salud
+Uploading asset (salud): supabase/functions/salud/index.ts
+Uploading asset (salud): supabase/functions/_shared/servicios.ts
 Deploying Function: tareas
 Uploading asset (tareas): supabase/functions/tareas/index.ts
 Uploading asset (tareas): supabase/functions/_shared/mensajes.ts
@@ -48,7 +32,7 @@ Uploading asset (telegram): supabase/functions/_shared/avisos.ts
 Uploading asset (telegram): supabase/functions/_shared/mensajes.ts
 Uploading asset (telegram): supabase/functions/_shared/servicios.ts
 Uploading asset (telegram): supabase/functions/_shared/alerta.ts
-Deployed Functions on project mgvlvqhnnfhaytjkrtqj: avisos, panel, reportar, tareas, telegram
+Deployed Functions on project mgvlvqhnnfhaytjkrtqj: avisos, panel, reportar, salud, tareas, telegram
 You can inspect your deployment in the Dashboard: https://supabase.com/dashboard/project/mgvlvqhnnfhaytjkrtqj/functions
 │
 ◇  Setting secrets...
@@ -56,5 +40,5 @@ Finished supabase secrets set.
 --- Bot
 {"ok":true,"result":{"id":8261618880,"is_bot":true,"first_name":"Bot SIMUB App","username":"SimubGtoBot","can_join_groups":true,"can_read_all_group_messages":false,"supports_inline_queries":false,"supports_guest_queries":false,"can_connect_to_business":false,"has_main_web_app":false,"has_topics_enabled":false,"allows_users_to_create_topics":false,"can_manage_bots":false,"supports_join_request_queries":false}}
 --- Webhook
-{"ok":true,"result":true,"description":"Webhook was set"}
-{"ok":true,"result":{"url":"https://mgvlvqhnnfhaytjkrtqj.supabase.co/functions/v1/telegram","has_custom_certificate":false,"pending_update_count":5,"max_connections":40,"ip_address":"104.18.38.10","allowed_updates":["message","callback_query"]}}
+{"ok":true,"result":true,"description":"Webhook is already set"}
+{"ok":true,"result":{"url":"https://mgvlvqhnnfhaytjkrtqj.supabase.co/functions/v1/telegram","has_custom_certificate":false,"pending_update_count":0,"max_connections":40,"ip_address":"104.18.38.10","allowed_updates":["message","callback_query"]}}
