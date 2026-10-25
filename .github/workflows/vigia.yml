@@ -1,0 +1,36 @@
+name: Vigía (mantiene activo Supabase y revisa que todo funcione)
+# Cada día hace una consulta real a la base (Supabase pausa los proyectos gratis tras 7 días sin uso)
+# y revisa el bot. Si algo falla avisa por Telegram (a quien escribió /vigia al bot) y este flujo falla,
+# así GitHub también manda correo. Los lunes manda «funcionando».
+on:
+  schedule:
+    - cron: '17 14 * * *'   # 8:17 a. m. hora de Guanajuato
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vigia:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Revisar salud
+        env:
+          PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          REF=$(echo "$PROJECT_REF" | sed -E 's#^https?://##; s#\.supabase\.co.*$##; s#^.*/project/##; s#/.*$##')
+          SEMANAL=$([ "$(date -u +%u)" = "1" ] && echo 1 || echo 0)
+          for i in 1 2 3; do
+            CODIGO=$(curl -s -o salida.json -w '%{http_code}' "https://$REF.supabase.co/functions/v1/salud?semanal=$SEMANAL")
+            [ "$CODIGO" = "200" ] && break; sleep 30
+          done
+          cat salida.json; echo
+          [ "$CODIGO" = "200" ] || { echo "::error::La revisión falló (HTTP $CODIGO). Si Supabase está pausado, entra al panel de Supabase y toca «Resume project»."; exit 1; }
+      - uses: actions/checkout@v4
+      - name: Mantener activo el vigía (GitHub apaga tareas programadas tras 60 días sin cambios)
+        run: |
+          git fetch -q origin vigia 2>/dev/null && git checkout -q vigia || git checkout -q --orphan vigia
+          git rm -rq --cached . 2>/dev/null || true
+          date -u +%Y-%m-%dT%H:%MZ > ultima_revision.txt
+          git config user.name "github-actions" && git config user.email "actions@github.com"
+          git add ultima_revision.txt && git commit -qm "Vigía $(date -u +%F)" && git push -q origin vigia

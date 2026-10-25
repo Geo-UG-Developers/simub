@@ -22,3 +22,6 @@ verify_jwt = false
 
 [functions.panel]
 verify_jwt = false
+
+[functions.salud]
+verify_jwt = false

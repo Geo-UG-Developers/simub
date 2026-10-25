@@ -82,6 +82,15 @@ async function mensaje(m: Msg) {
     return responder(`Listo: este grupo queda como <b>${NOMBRE_ROL[data] ?? data}</b> de SIMUB.`);
   }
   if (c?.comando === 'cancelar') { await soltar(chat, user); return responder('Cancelado.'); }
+  if (c?.comando === 'vigia') {
+    if (m.chat.type !== 'private') return responder('Escríbeme /vigia en un chat privado.');
+    const { data: v } = await db.from('config_privada').select('valor').eq('clave', 'vigia').maybeSingle();
+    const actual = (v?.valor as { chat_id?: number } | null)?.chat_id;
+    if (actual && actual !== chat) return responder('El vigía ya está asignado a otra persona.');
+    if (actual === chat) { await db.from('config_privada').delete().eq('clave', 'vigia'); return responder('Listo: ya no te enviaré los avisos del vigía.'); }
+    await db.from('config_privada').upsert({ clave: 'vigia', valor: { chat_id: chat } });
+    return responder('Listo: te avisaré aquí si algo deja de funcionar, y cada lunes te mandaré «SIMUB funcionando».');
+  }
 
   const rol = await rolDeChat(chat);
   const comunicacion = rol === 'comunicacion';
