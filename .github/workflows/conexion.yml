@@ -32,8 +32,10 @@ jobs:
         run: supabase projects list | grep -q mgvlvqhnnfhaytjkrtqj && echo "OK la llave ve el proyecto simub" || { echo "ERROR la llave no ve simub"; supabase projects list | cut -c1-120; exit 1; }
       - name: 4 · Contraseña de la base de datos
         run: |
-          set -o pipefail
-          supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" 2>&1 | sed "s/$SUPABASE_DB_PASSWORD/***/g" | tail -5
           mkdir -p supabase/migrations
-          supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" 2>&1 | sed "s/$SUPABASE_DB_PASSWORD/***/g" | tail -8
-          echo "OK conexión a la base de datos"
+          supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" > out.txt 2>&1; a=$?
+          supabase migration list --linked --password "$SUPABASE_DB_PASSWORD" >> out.txt 2>&1; b=$?
+          sed -i "s/$SUPABASE_DB_PASSWORD/***/g" out.txt
+          tail -12 out.txt | tr '\n' ' ' | cut -c1-900 | sed 's/^/::notice title=salida::/'
+          echo
+          [ $a -eq 0 ] && [ $b -eq 0 ] && echo "::notice title=resultado::OK conexión a la base de datos" || { echo "::error title=resultado::falló link=$a list=$b"; exit 1; }
