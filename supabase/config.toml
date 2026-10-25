@@ -1,0 +1,24 @@
+# Configuración mínima del CLI de Supabase para SIMUB.
+project_id = "simub"
+
+[db]
+major_version = 15
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed/00_base.sql", "./seed/90_demo.sql"]
+
+[functions.telegram]
+verify_jwt = false
+
+[functions.reportar]
+verify_jwt = false
+
+[functions.tareas]
+verify_jwt = false
+
+[functions.avisos]
+verify_jwt = false
+
+[functions.panel]
+verify_jwt = false

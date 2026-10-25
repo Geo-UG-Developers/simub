@@ -1,0 +1,109 @@
+name: Servidor (pruebas e instalación en Supabase)
+# Requiere los secretos SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF y SUPABASE_DB_PASSWORD.
+# Ver README para la lista de permisos del token de Supabase.
+# Secretos: SUPABASE_* y TELEGRAM_BOT_TOKEN.
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/**', '.github/workflows/servidor.yml']
+  workflow_dispatch:
+
+jobs:
+  pruebas:
+    name: Pruebas de la base de datos
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Pruebas del bot
+        run: cd supabase/functions && deno test --allow-read _shared/
+      - name: Correr pruebas
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGPASSWORD: postgres
+        run: ./supabase/tests/run.sh
+
+  instalar:
+    name: Instalar en Supabase
+    needs: pruebas
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: ¿Están los secretos?
+        id: secretos
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ] || [ -z "$PROJECT_REF" ]; then
+            echo "::warning::Faltan secretos de Supabase en GitHub (Settings > Secrets and variables > Actions). No se instala nada."
+            echo "listo=no" >> "$GITHUB_OUTPUT"
+          else
+            # Acepta la clave sola o la URL completa del proyecto.
+            REF=$(echo "$PROJECT_REF" | sed -E 's#^https?://##; s#\.supabase\.co.*$##; s#^.*/project/##; s#/.*$##')
+            echo "PROJECT_REF=$REF" >> "$GITHUB_ENV"
+            echo "listo=si" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: supabase/setup-cli@v1
+        if: steps.secretos.outputs.listo == 'si'
+        with:
+          version: 2.122.0
+      - name: Conectar con el proyecto
+        if: steps.secretos.outputs.listo == 'si'
+        run: |
+          set -o pipefail
+          echo "Ref del proyecto: ${#PROJECT_REF} caracteres, empieza con ${PROJECT_REF:0:4}" | tee -a "$RUNNER_TEMP/registro.txt"
+          supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD" --debug 2>&1 | sed "s/$SUPABASE_DB_PASSWORD/***/g" | tail -60 | tee -a "$RUNNER_TEMP/registro.txt"
+      - name: Aplicar migraciones y datos base
+        if: steps.secretos.outputs.listo == 'si'
+        run: |
+          set -o pipefail
+          supabase db push --linked --include-seed --password "$SUPABASE_DB_PASSWORD" --yes 2>&1 | sed "s/$SUPABASE_DB_PASSWORD/***/g" | tail -80 | tee -a "$RUNNER_TEMP/registro.txt"
+      - name: Instalar funciones del servidor
+        if: steps.secretos.outputs.listo == 'si'
+        run: |
+          set -o pipefail
+          supabase functions deploy --project-ref "$PROJECT_REF" --use-api 2>&1 | tail -20 | tee -a "$RUNNER_TEMP/registro.txt"
+      - name: Configurar el bot de Telegram
+        if: steps.secretos.outputs.listo == 'si'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+            echo "Falta el secreto TELEGRAM_BOT_TOKEN" | tee -a "$RUNNER_TEMP/registro.txt"; exit 0
+          fi
+          supabase secrets set --project-ref "$PROJECT_REF" TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" 2>&1 | tail -3 | tee -a "$RUNNER_TEMP/registro.txt"
+          SECRETO=$(printf 'simub-webhook:%s' "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-48)
+          API="https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN"
+          {
+            echo "--- Bot"
+            curl -s "$API/getMe"; echo
+            echo "--- Webhook"
+            curl -s "$API/setWebhook" -d "url=https://$PROJECT_REF.supabase.co/functions/v1/telegram" \
+              -d "secret_token=$SECRETO" --data-urlencode 'allowed_updates=["message","callback_query"]'; echo
+            curl -s "$API/getWebhookInfo"; echo
+          } | tee -a "$RUNNER_TEMP/registro.txt"
+      - name: Guardar registro (para diagnóstico)
+        if: always() && steps.secretos.outputs.listo == 'si'
+        run: |
+          cp "$RUNNER_TEMP/registro.txt" /tmp/registro.txt 2>/dev/null || echo "sin registro" > /tmp/registro.txt
+          git config user.name "github-actions" && git config user.email "actions@github.com"
+          git fetch -q origin registro 2>/dev/null && git checkout -q registro || git checkout -q --orphan registro
+          git rm -rq --cached . 2>/dev/null || true
+          cp /tmp/registro.txt instalacion.txt
+          git add instalacion.txt && git commit -qm "Registro de instalación $GITHUB_RUN_ID" && git push -q origin registro
