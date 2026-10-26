@@ -336,7 +336,7 @@ async function pintarDetalle(id: string, centrar: boolean) {
 
 // ================================================================ PARTE DE SERVICIO
 async function vistaParte(id: string) {
-  marco('reportes', 'Parte de servicio', 'Se llena en 30 segundos. Se puede guardar e imprimir o guardar en PDF.', '<div id="parte"><p class="tenue">Cargando…</p></div>',
+  marco('reportes', 'Parte de servicio', '', '<div id="parte"><p class="tenue">Cargando…</p></div>',
     '<a class="btn" href="#reportes">Volver a reportes</a>');
   let d: Detalle | null = null;
   const [unidades, personal] = await Promise.all([tabla<{ nombre: string; activa: boolean }>('unidades', 'nombre').catch(() => []),
@@ -383,7 +383,7 @@ async function vistaParte(id: string) {
     <div class="firma solo-impresion"><span>Firma del responsable</span></div>
     <div class="pie-parte no-imprimir">
       <button class="btn primario" type="submit">Guardar parte</button>
-      <button class="btn" type="button" id="pdf-parte">Guardar y descargar PDF</button>
+      <button class="btn" type="button" id="pdf-parte">Descargar PDF</button>
       <button class="btn tenue-btn" type="button" id="imprimir">Imprimir</button>
       ${d.parte?.actualizado_en ? `<span class="tenue">Guardado ${fecha(d.parte.actualizado_en)}</span>` : ''}</div>
   </form>`;
@@ -411,7 +411,7 @@ async function vistaParte(id: string) {
       try { const { blob, nombre } = await partePdf(d!, txt, datos.personal as string[], `${BASE}escudo-192.png`); await entregarPdf(blob, nombre); aviso('Parte guardado y PDF listo.'); }
       catch { aviso('No se pudo generar el PDF.', true); }
     }
-    b.disabled = false; b.textContent = 'Guardar y descargar PDF';
+    b.disabled = false; b.textContent = 'Descargar PDF';
   });
 }
 
