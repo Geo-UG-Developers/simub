@@ -4,16 +4,21 @@ Using access token from env var...
 Supabase CLI 2.122.0
 Using profile: supabase (supabase.co)
 Using access token from env var...
-2026/10/26 12:39:21 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
-2026/10/26 12:39:22 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
-2026/10/26 12:39:23 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
-2026/10/26 12:39:23 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
-2026/10/26 12:39:23 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
-2026/10/26 12:39:23 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
-2026/10/26 12:39:23 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
+2026/10/26 13:01:05 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
+2026/10/26 13:01:05 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
+2026/10/26 13:01:06 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
+2026/10/26 13:01:06 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
+2026/10/26 13:01:06 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
+2026/10/26 13:01:07 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
+2026/10/26 13:01:07 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
 Finished supabase link.
 Connecting to remote database...
-Remote database is up to date.
+Do you want to push these migrations to the remote database?
+ • 20261026000500_limpieza_proteccion.sql
+ [Y/n] y
+Applying migration 20261026000500_limpieza_proteccion.sql...
+Seed files are up to date.
+Finished supabase db push.
 Uploading asset (reportar): supabase/functions/_shared/mensajes.ts
 Uploading asset (reportar): supabase/functions/_shared/alerta.ts
 Uploading asset (reportar): supabase/functions/_shared/servicios.ts
