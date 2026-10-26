@@ -115,4 +115,26 @@ do $$ declare i jsonb; cod text; begin
   perform pg_temp.ok((select chat_id from chats where rol = 'alertas') = -100123, 'chat guardado');
 end $$;
 
+-- 11. Límite por teléfono, conservación y limpieza
+do $$ declare r jsonb; begin
+  for i in 1..5 loop perform registrar_reporte(gen_random_uuid(), 'otra', 21, -101, null, '{}', null, null, null, '473-555-0101', false, '{}'); end loop;
+  begin perform registrar_reporte(gen_random_uuid(), 'otra', 21, -101, null, '{}', null, null, null, '4735550101', false, '{}');
+    raise exception 'FALLÓ: debía limitar por teléfono';
+  exception when others then perform pg_temp.ok(sqlerrm = 'limite_reportes', 'límite por teléfono: ' || sqlerrm); end;
+  perform pg_temp.ok(revisar_avalancha() = 0, 'sin avalancha con pocos reportes');
+  update reportes set fotos = '{a.jpg}', creado_en = now() - interval '13 months' where tipo = 'fauna';
+  r := aplicar_conservacion();
+  perform pg_temp.ok(jsonb_array_length(r->'fotos') = 1, 'devuelve fotos viejas');
+  perform pg_temp.ok((select nombre is null and telefono is null and cardinality(fotos) = 0 from reportes where tipo = 'fauna'), 'anonimiza a los 12 meses');
+  insert into miembros_panel values ('66666666-6666-4666-8666-666666666666', 'admin', 'Admin') on conflict do nothing;
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');
+  begin perform limpiar_datos_prueba(); raise exception 'FALLÓ: guardia limpió datos';
+  exception when others then perform pg_temp.ok(sqlerrm = 'sin_permiso', 'solo admin limpia: ' || sqlerrm); end;
+  perform pg_temp.como('66666666-6666-4666-8666-666666666666');
+  r := limpiar_datos_prueba();
+  perform pg_temp.ok((select count(*) from reportes) = 0 and (select count(*) from revisiones) = 0, 'limpieza total');
+  r := registrar_reporte(gen_random_uuid(), 'gas', 21, -101, null, '{}', null, null, null, null, false, '{}');
+  perform pg_temp.ok(r->>'folio' like 'SIM-__-0001', 'folios reinician: ' || (r->>'folio'));
+end $$;
+
 \echo 'TODAS LAS PRUEBAS DE SIMUB PASARON'

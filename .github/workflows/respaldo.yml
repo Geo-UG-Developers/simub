@@ -1,0 +1,40 @@
+name: Respaldo semanal de la base (cifrado)
+# Cada domingo exporta la base de datos (estructura y datos), la cifra con la contraseña de la base
+# (secreto SUPABASE_DB_PASSWORD) y la guarda 90 días en Actions › este flujo › Artifacts.
+# Aunque el repositorio es público, el archivo cifrado no se puede abrir sin esa contraseña.
+# Cómo restaurar: ver RESPALDOS.md
+on:
+  schedule:
+    - cron: '41 9 * * 0'   # domingo 3:41 a. m. hora de Guanajuato
+  workflow_dispatch:
+
+jobs:
+  respaldo:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.0
+      - name: Exportar y cifrar
+        run: |
+          set -o pipefail
+          REF=$(echo "$PROJECT_REF" | sed -E 's#^https?://##; s#\.supabase\.co.*$##; s#^.*/project/##; s#/.*$##')
+          supabase link --project-ref "$REF" --password "$SUPABASE_DB_PASSWORD" > /dev/null 2>&1
+          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" -f esquema.sql 2>&1 | sed "s/$SUPABASE_DB_PASSWORD/***/g" | tail -3
+          supabase db dump --linked --password "$SUPABASE_DB_PASSWORD" --data-only -f datos.sql 2>&1 | sed "s/$SUPABASE_DB_PASSWORD/***/g" | tail -3
+          test -s esquema.sql && test -s datos.sql
+          echo "Tamaño: $(du -h datos.sql | cut -f1) de datos"
+          tar czf respaldo.tgz esquema.sql datos.sql
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$SUPABASE_DB_PASSWORD" --symmetric --cipher-algo AES256 \
+            -o "respaldo_$(date -u +%F).tgz.gpg" respaldo.tgz
+          rm -f esquema.sql datos.sql respaldo.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: respaldo-${{ github.run_number }}
+          path: respaldo_*.tgz.gpg
+          retention-days: 90

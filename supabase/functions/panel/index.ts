@@ -36,6 +36,17 @@ Deno.serve(async (req) => {
     await actualizarAlerta(b.reporte);
     return json({ ok: true });
   }
+  if (b.accion === 'limpiar') {   // antes de salir a producción: borra lo capturado en pruebas
+    if (m.rol !== 'admin') return json({ error: 'solo_admin' }, 403);
+    const { createClient } = await import('npm:@supabase/supabase-js@2.45.4');
+    const comoUsuario = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: `Bearer ${jwt}` } }, auth: { persistSession: false } });
+    const { data, error } = await comoUsuario.rpc('limpiar_datos_prueba');
+    if (error) return json({ error: error.message }, 409);
+    const fotos = (data.fotos ?? []) as string[];
+    for (let i = 0; i < fotos.length; i += 100) await db.storage.from('fotos').remove(fotos.slice(i, i + 100));
+    return json({ ok: true, reportes: data.reportes, revisiones: data.revisiones, fotos: fotos.length });
+  }
   if (b.accion === 'reenviar') {   // reporte que llegó cuando el grupo aún no estaba vinculado
     const d = await datosAlerta(b.reporte);
     if (!d) return json({ error: 'no_existe' }, 404);

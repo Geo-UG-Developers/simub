@@ -1,5 +1,5 @@
 // Entrada de la app ciudadana (sesión anónima): reportes, información extra y revisiones.
-import { CORS, db, json } from '../_shared/servicios.ts';
+import { chatDe, CORS, db, json, tg } from '../_shared/servicios.ts';
 import { avisarRevision, enviarAlerta, responderAlerta } from '../_shared/alerta.ts';
 import { escapar, fechaMx } from '../_shared/mensajes.ts';
 
@@ -56,6 +56,12 @@ Deno.serve(async (req) => {
       return json({ error: limite ? 'limite' : 'servidor' }, limite ? 429 : 500);
     }
     await enviarAlerta(r.id, fotos[0]);
+    const { data: avalancha } = await db.rpc('revisar_avalancha');
+    if (avalancha) {
+      const chat = await chatDe('alertas');
+      if (chat) await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', text: `<b>Atención:</b> llegaron ${avalancha} reportes en 10 minutos. ` +
+        'Puede ser una emergencia grande o un uso indebido de la app. Revisa el mapa en el panel antes de despachar todas las unidades.' });
+    }
     return json(r);
   }
 

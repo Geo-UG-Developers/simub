@@ -10,6 +10,7 @@ import {
   type Estado, type InfoPublica, type MiReporte, type MiRevision, type Noticia,
 } from './api';
 import { prepararSonido, sonarEnviado } from './sonido';
+import { PRIVACIDAD, TERMINOS } from './legal';
 
 const BASE = import.meta.env.BASE_URL;
 const app = document.getElementById('app')!;
@@ -106,6 +107,7 @@ function bienvenida() {
       <button class="boton dorado" id="comenzar" type="button">Comenzar</button>
       <p class="lema">Honor, valor y servicio</p>
       <div class="credito"><img src="${BASE}geoug-clara.png" alt=""><span>Desarrollado por <b>GEO UG Developers</b></span></div>
+      <p class="legal-claro">Al continuar aceptas los <a href="#/terminos">términos de uso</a> y el <a href="#/privacidad">aviso de privacidad</a>.</p>
     </div>
   </main>`;
   $('comenzar').addEventListener('click', () => {
@@ -181,7 +183,8 @@ function formulario(tipo: string) {
         <input type="checkbox" id="anonimo" ${borrador.anonimo ? 'checked' : ''}></label>
     </section>
   </main>
-  <div class="pie-fijo"><button type="button" class="boton" id="enviar">${I.enviar(20)} Enviar reporte a SIMUB</button></div>`;
+  <div class="pie-fijo"><button type="button" class="boton" id="enviar">${I.enviar(20)} Enviar reporte a SIMUB</button>
+    <p class="legal">Tus datos se usan solo para atender la emergencia. <a href="#/privacidad">Aviso de privacidad</a></p></div>`;
 
   // Ubicación: GPS automático y ajuste tocando el mapa.
   const centro: L.LatLngTuple = borrador.tieneUbicacion ? [borrador.lat, borrador.lon] : CENTRO;
@@ -388,7 +391,8 @@ function revisionForm() {
       <label class="campo"><span>Comentarios <span class="tenue">(opcional)</span></span><textarea id="comentario" rows="2" maxlength="800">${esc(revBorrador.comentario)}</textarea></label>
     </section>
   </main>
-  <div class="pie-fijo"><button type="button" class="boton cafe" id="solicitar">${I.calendario(20)} Solicitar visita</button></div>`;
+  <div class="pie-fijo"><button type="button" class="boton cafe" id="solicitar">${I.calendario(20)} Solicitar visita</button>
+    <p class="legal">Tus datos se usan solo para agendar la visita. <a href="#/privacidad">Aviso de privacidad</a></p></div>`;
   const guardar = () => {
     Object.assign(revBorrador, { direccion: $<HTMLTextAreaElement>('direccion').value, horario: $<HTMLInputElement>('horario').value, comentario: $<HTMLTextAreaElement>('comentario').value });
     borrador.nombre = $<HTMLInputElement>('nombre').value; borrador.telefono = $<HTMLInputElement>('telefono').value;
@@ -508,11 +512,19 @@ function apoya() {
         ${telEstacion() ? `<a class="boton claro" href="tel:${telEstacion()}">${I.mano(18)} Quiero ser voluntario</a>` : ''}</section>
       <section class="tarjeta"><h2 class="sec">Quiénes somos</h2><p>${esc(e?.quienes_somos ?? '')}</p>
         <p class="tenue">${esc(e?.nombre ?? '')} · ${pendiente(e?.telefono ? e.telefono : '', e?.telefono_texto ?? '[Teléfono]')}</p></section>
+      <p class="legal centro"><a href="#/privacidad">Aviso de privacidad</a> · <a href="#/terminos">Términos de uso</a></p>
       <p class="credito oscuro"><img src="${BASE}geoug.png" alt=""><span>App desarrollada sin costo por <b>GEO UG Developers</b> · Universidad de Guanajuato</span></p>`;
     document.getElementById('copiar')?.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(clabe); aviso('CLABE copiada.'); } catch { aviso(clabe); }
     });
   }).catch(() => { $('contenido').innerHTML = '<p class="tenue">Sin conexión con el servidor.</p>'; });
+}
+
+// ---------------------------------------------------------------- legal
+function legal(cual: 'privacidad' | 'terminos') {
+  app.innerHTML = `${cabecera(cual === 'privacidad' ? 'Aviso de privacidad' : 'Términos de uso', vioBienvenida() ? '#/apoya' : '#/inicio')}
+  <main class="pantalla"><article class="articulo legal-texto">${cual === 'privacidad' ? PRIVACIDAD : TERMINOS}</article>
+  <p class="legal centro"><a href="#/${cual === 'privacidad' ? 'terminos' : 'privacidad'}">${cual === 'privacidad' ? 'Ver términos de uso' : 'Ver aviso de privacidad'}</a></p></main>`;
 }
 
 // ---------------------------------------------------------------- rutas
@@ -529,6 +541,8 @@ function ir() {
     case 'noticias': return noticias();
     case 'noticia': return noticia(arg);
     case 'apoya': return apoya();
+    case 'privacidad': return legal('privacidad');
+    case 'terminos': return legal('terminos');
     default: return inicio();
   }
 }

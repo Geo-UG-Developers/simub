@@ -10,6 +10,13 @@ Deno.serve(async (req) => {
   let reportes = 0;
   const { count, error } = await db.from('reportes').select('id', { count: 'exact', head: true });
   if (error) problemas.push(`Base de datos: ${error.message}`); else reportes = count ?? 0;
+  // Conservación de datos (aviso de privacidad): fotos 6 meses, datos personales 12 meses.
+  const { data: cons, error: e2 } = await db.rpc('aplicar_conservacion');
+  if (e2) problemas.push(`Conservación de datos: ${e2.message}`);
+  else {
+    const fotos = (cons?.fotos ?? []) as string[];
+    for (let i = 0; i < fotos.length; i += 100) await db.storage.from('fotos').remove(fotos.slice(i, i + 100));
+  }
   const w = await tg('getWebhookInfo', {});
   if (!w.ok) problemas.push('El bot de Telegram no responde (¿token?).');
   else {

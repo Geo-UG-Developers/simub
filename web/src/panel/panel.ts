@@ -558,6 +558,10 @@ async function vistaAjustes() {
   $('ajustes').innerHTML = `
     <section class="tarjeta"><h3>Grupos de Telegram (@SimubGtoBot)</h3><p class="tenue">Agrega el bot al grupo y un administrador escribe <code>/vincular CÓDIGO</code> dentro del grupo.</p>
       <table class="tabla"><tbody>${cods.map((x) => `<tr><td>${ROL_CHAT[x.rol] ?? x.rol}</td><td><code>${esc(x.codigo)}</code></td><td>${x.vinculado ? '<em class="pill p-verde">Vinculado</em>' : '<em class="pill p-gris">Sin vincular</em>'}</td></tr>`).join('')}</tbody></table></section>
+    <section class="tarjeta peligro"><h3>Preparar para producción</h3>
+      <p class="tenue">Borra <b>todos</b> los reportes, revisiones y partes de servicio capturados en pruebas, sus fotos y las noticias de ejemplo.
+      Los folios vuelven a empezar en 0001. Los datos de la estación, unidades y personal se conservan. No se puede deshacer.</p>
+      <div class="fila-btn"><input id="confirma-limpiar" placeholder="Escribe BORRAR para confirmar"><button class="btn rojo" id="limpiar" type="button">Borrar datos de prueba</button></div></section>
     <form class="tarjeta" id="f-cfg"><h3>Datos de la estación (se ven en la app)</h3>
       <div class="rejilla-2">${campo('estacion', 'telefono', 'Teléfono de la estación', 'text', '10 dígitos; lo marca el botón «Llamar»')}${campo('estacion', 'horario', 'Horario de atención')}
       ${campo('estacion', 'direccion', 'Dirección')}${campo('estacion', 'correo', 'Correo de contacto')}</div>
@@ -591,6 +595,12 @@ async function vistaAjustes() {
     });
     try { for (const [g, val] of Object.entries(nuevos)) await guardarConfig(g, val); aviso('Datos guardados. Ya se ven en la app.'); }
     catch { aviso('No se pudo guardar.', true); }
+  });
+  $('limpiar').addEventListener('click', async () => {
+    if ($<HTMLInputElement>('confirma-limpiar').value.trim().toUpperCase() !== 'BORRAR') return aviso('Escribe BORRAR para confirmar.', true);
+    const b = $<HTMLButtonElement>('limpiar'); b.disabled = true; b.textContent = 'Borrando…';
+    try { await accion({ accion: 'limpiar' }); aviso('Listo: se borraron los datos de prueba.'); vistaAjustes(); }
+    catch (e) { aviso(ERRORES[(e as Error).message] ?? 'No se pudo borrar.', true); b.disabled = false; b.textContent = 'Borrar datos de prueba'; }
   });
   raiz.querySelectorAll<HTMLButtonElement>('[data-tog]').forEach((b) => b.addEventListener('click', async () => {
     try { await actualizar(b.dataset.tog!, b.dataset.id!, { [b.dataset.campo!]: b.dataset.val === 'true' }); vistaAjustes(); } catch { aviso('No se pudo cambiar.', true); }

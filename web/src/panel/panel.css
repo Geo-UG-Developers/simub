@@ -122,7 +122,8 @@ blockquote.agregado { border-left: 3px solid var(--dorado); } blockquote small {
 .tabla th, .tabla td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #EFE7E2; vertical-align: top; } .tabla th { color: var(--tenue); font-weight: 600; } .nw { white-space: nowrap; }
 
 /* Ajustes */
-.ajustes { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; align-items: start; } .ajustes > form { grid-column: 1 / -1; }
+.ajustes { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; align-items: start; } .ajustes > form, .ajustes > .peligro { grid-column: 1 / -1; }
+.peligro { border: 1px solid #F0C4C0; }
 .cat { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .cat li { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--fondo); border-radius: 10px; padding: 8px 10px; }
 .cat li.inactivo { opacity: .5; } .cat small { color: var(--tenue); }
