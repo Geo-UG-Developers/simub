@@ -4,13 +4,13 @@ Using access token from env var...
 Supabase CLI 2.122.0
 Using profile: supabase (supabase.co)
 Using access token from env var...
-2026/10/25 20:32:20 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
-2026/10/25 20:32:20 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
-2026/10/25 20:32:21 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
-2026/10/25 20:32:21 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
-2026/10/25 20:32:21 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
-2026/10/25 20:32:22 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
-2026/10/25 20:32:22 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
+2026/10/26 12:39:21 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
+2026/10/26 12:39:22 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
+2026/10/26 12:39:23 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
+2026/10/26 12:39:23 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
+2026/10/26 12:39:23 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
+2026/10/26 12:39:23 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
+2026/10/26 12:39:23 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
 Finished supabase link.
 Connecting to remote database...
 Remote database is up to date.
@@ -41,4 +41,4 @@ Finished supabase secrets set.
 {"ok":true,"result":{"id":8261618880,"is_bot":true,"first_name":"Bot SIMUB App","username":"SimubGtoBot","can_join_groups":true,"can_read_all_group_messages":false,"supports_inline_queries":false,"supports_guest_queries":false,"can_connect_to_business":false,"has_main_web_app":false,"has_topics_enabled":false,"allows_users_to_create_topics":false,"can_manage_bots":false,"supports_join_request_queries":false}}
 --- Webhook
 {"ok":true,"result":true,"description":"Webhook is already set"}
-{"ok":true,"result":{"url":"https://mgvlvqhnnfhaytjkrtqj.supabase.co/functions/v1/telegram","has_custom_certificate":false,"pending_update_count":0,"max_connections":40,"ip_address":"104.18.38.10","allowed_updates":["message","callback_query"]}}
+{"ok":true,"result":{"url":"https://mgvlvqhnnfhaytjkrtqj.supabase.co/functions/v1/telegram","has_custom_certificate":false,"pending_update_count":0,"max_connections":40,"ip_address":"172.64.149.246","allowed_updates":["message","callback_query"]}}
