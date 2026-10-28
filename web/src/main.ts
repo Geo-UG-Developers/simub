@@ -93,8 +93,9 @@ function tarjetaAvisos(cajaId: string, texto?: string) {
 }
 
 // ---------------------------------------------------------------- bienvenida (primera vez)
+// La pantalla de inicio aparece cada vez que se abre la app (sessionStorage se borra al cerrarla).
 const CLAVE_BV = 'simub-bienvenida';
-const vioBienvenida = () => { try { return localStorage.getItem(CLAVE_BV) === '1'; } catch { return true; } };
+const vioBienvenida = () => { try { return sessionStorage.getItem(CLAVE_BV) === '1'; } catch { return true; } };
 function bienvenida() {
   app.innerHTML = `
   <main class="bienvenida">
@@ -111,7 +112,7 @@ function bienvenida() {
     </div>
   </main>`;
   $('comenzar').addEventListener('click', () => {
-    try { localStorage.setItem(CLAVE_BV, '1'); } catch { /* */ }
+    try { sessionStorage.setItem(CLAVE_BV, '1'); } catch { /* */ }
     location.hash = '#/inicio'; if (location.hash === '#/inicio') ir();
   });
 }

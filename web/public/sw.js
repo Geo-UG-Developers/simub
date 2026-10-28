@@ -8,7 +8,7 @@ self.addEventListener('push', (e) => {
   e.waitUntil(self.registration.showNotification(d.titulo || 'SIMUB', {
     body: d.cuerpo || '',
     icon: 'icon-192.png',
-    badge: 'favicon.png',
+    badge: 'favicon-simub.png',
     tag: d.etiqueta || 'simub',
     renotify: true,
     data: { url: d.url || '#/mis' },
