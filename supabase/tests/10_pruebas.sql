@@ -137,4 +137,46 @@ do $$ declare r jsonb; begin
   perform pg_temp.ok(r->>'folio' like 'SIM-__-0001', 'folios reinician: ' || (r->>'folio'));
 end $$;
 
+-- 12. Servicios: folio anual, unidades, bitácora, cierre, importación del histórico y conteos
+do $$ declare a jsonb; b jsonb; r jsonb; m jsonb; c jsonb; uid_m4 int; begin
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');   -- guardia
+  perform pg_temp.ok((select count(*) from unidades where nombre = 'U-08') = 1, 'unidades reales cargadas');
+  perform pg_temp.ok((select valor->>'telefono' from config_publica where clave = 'estacion') = '4737346959', 'teléfono real');
+  a := panel_guardar_servicio(null, '{"clasificacion":"inc_pastizal","fecha":"2026-03-02","lugar":"Col. Yerbabuena","medio":"911","unidades":["U-08","M-16"]}');
+  b := panel_guardar_servicio(null, '{"clasificacion":"acc_moto","fecha":"2026-03-02","unidades":["U-04"]}');
+  perform pg_temp.ok((b->>'folio')::int = (a->>'folio')::int + 1, 'folio consecutivo');
+  perform pg_temp.ok((select estado from unidades where nombre = 'U-08') = 'en_servicio', 'unidad ocupada al asignarla');
+  perform panel_bitacora((a->>'id')::uuid, null, 'llegada');
+  perform pg_temp.ok((select h_llegada is not null from servicios where id = (a->>'id')::uuid), 'hito llegada guarda hora');
+  perform panel_bitacora((a->>'id')::uuid, 'Se requiere apoyo de pipa', null);
+  perform pg_temp.ok((select count(*) from bitacora where servicio_id = (a->>'id')::uuid) = 3, 'bitácora con autor');
+  perform panel_guardar_servicio((a->>'id')::uuid, '{"clasificacion":"inc_pastizal","fecha":"2026-03-02","unidades":["U-08"],"apoyos":{"Cruz Roja":{"unidades":"CR-1"}}}');
+  perform pg_temp.ok((select estado from unidades where nombre = 'M-16') = 'disponible', 'unidad liberada al quitarla');
+  m := panel_mando();
+  perform pg_temp.ok(jsonb_array_length(m->'servicios') = 2, 'mando: 2 activos');
+  perform panel_cerrar_servicio((a->>'id')::uuid);
+  perform pg_temp.ok((select estado from unidades where nombre = 'U-08') = 'disponible', 'cerrar libera unidades');
+  begin perform panel_anular_servicio((b->>'id')::uuid, 'duplicado'); raise exception 'FALLÓ: guardia anuló';
+  exception when others then perform pg_temp.ok(sqlerrm = 'solo_admin', 'solo admin anula: ' || sqlerrm); end;
+  begin perform panel_importar_servicios('[]'); raise exception 'FALLÓ: guardia importó';
+  exception when others then perform pg_temp.ok(sqlerrm = 'solo_admin', 'solo admin importa: ' || sqlerrm); end;
+  perform pg_temp.como('66666666-6666-4666-8666-666666666666');   -- admin
+  r := panel_importar_servicios('[{"anio":2026,"folio":1,"fecha":"2026-01-01","clasificacion":"inc_baldio","h_despacho":"2026-01-01T00:27:00-06:00","h_base":"2026-01-01T01:25:00-06:00","unidades":["U-08"],"personal_num":2},
+     {"anio":2026,"folio":500,"fecha":"2026-03-02","clasificacion":"inc_pastizal","falsa_alarma":true},
+     {"anio":2026,"folio":2,"fecha":"2026-01-01","clasificacion":"no_existe"}]');
+  perform pg_temp.ok((r->>'importados')::int = 1 and (r->>'omitidos')::int = 2, 'importa sin pisar capturas: ' || r::text);
+  r := panel_importar_servicios('[{"anio":2026,"folio":1,"fecha":"2026-01-01","clasificacion":"inc_pastizal"}]');
+  perform pg_temp.ok((select clasificacion from servicios where anio = 2026 and folio = 1) = 'inc_pastizal', 're-importar actualiza');
+  perform panel_anular_servicio((b->>'id')::uuid, 'duplicado');
+  c := panel_conteos(2026);
+  perform pg_temp.ok((select sum((x->>'n')::int) from jsonb_array_elements(c->'conteos') x) = 2, 'conteo excluye anulados: ' || c::text);
+  perform pg_temp.ok((c->'apoyos'->>'Cruz Roja')::int = 1, 'conteo de apoyos');
+  r := registrar_reporte(gen_random_uuid(), 'fauna', 21, -101, null, '{"valores":{"animal":"abejas"}}', null, 'kínder', null, null, false, '{}');
+  a := panel_servicio_desde_reporte((r->>'id')::uuid);
+  perform pg_temp.ok((select clasificacion from servicios where id = (a->>'id')::uuid) = 'fau_enjambre', 'servicio desde reporte clasifica');
+  perform pg_temp.ok((panel_servicio_desde_reporte((r->>'id')::uuid))->>'id' = a->>'id', 'no duplica servicio del reporte');
+  r := limpiar_datos_prueba();
+  perform pg_temp.ok((select count(*) from servicios) = 1 and (select origen from servicios) = 'historico', 'limpieza conserva histórico');
+end $$;
+
 \echo 'TODAS LAS PRUEBAS DE SIMUB PASARON'

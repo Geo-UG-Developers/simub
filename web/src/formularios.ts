@@ -52,9 +52,9 @@ export const FORMULARIOS: Record<Tipo, Formulario> = {
   },
   fauna: {
     tipo: 'fauna', nombre: 'Control de fauna', titulo: 'Control de fauna', color: '#1E6B34', tinte: '#DFF0E2',
-    aviso: 'No lo toques ni intentes atraparlo. Aleja a niños y mascotas.',
+    aviso: 'No lo toques ni intentes atraparlo. Aleja a niños y mascotas. SIMUB no atiende alacranes ni perros agresivos: para esos casos llama al 911.',
     preguntas: [
-      { clave: 'animal', texto: '¿Qué animal es?', opciones: [['abejas', 'Abejas o avispas'], ['serpiente', 'Serpiente'], ['alacran', 'Alacrán'], ['perro', 'Perro agresivo'], ['atrapado', 'Animal atrapado'], ['silvestre', 'Otro silvestre']] },
+      { clave: 'animal', texto: '¿Qué animal es?', opciones: [['abejas', 'Abejas, avispas o guarichos'], ['serpiente', 'Serpiente u otro reptil'], ['atrapado', 'Animal atrapado'], ['silvestre', 'Tlacuache, cacomixtle u otro silvestre']] },
       { clave: 'donde', texto: '¿Dónde está?', opciones: [['casa', 'Dentro de casa'], ['patio', 'Patio o azotea'], ['calle', 'En la calle'], ['arbol', 'En un árbol'], ['otro', 'Otro lugar']] },
       { clave: 'picado', texto: '¿Alguien fue picado o mordido?', opciones: SI_NO },
     ],

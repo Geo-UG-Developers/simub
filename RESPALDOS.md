@@ -1,7 +1,7 @@
 # Respaldos
 
-Cada domingo GitHub exporta la base de datos completa y la guarda **cifrada** durante 90 días
-(Actions › «Respaldo semanal de la base» › la ejecución › *Artifacts*). Se puede correr a mano con **Run workflow**.
+Cada día (3:41 a. m.) GitHub exporta la base de datos completa y la guarda **cifrada** durante 90 días
+(Actions › «Respaldo diario de la base» › la ejecución › *Artifacts*). Se puede correr a mano con **Run workflow**.
 
 - El archivo se abre con la **contraseña de la base de datos** de Supabase (la misma del secreto `SUPABASE_DB_PASSWORD`).
   Si algún día se cambia esa contraseña, guarda la anterior: los respaldos viejos siguen usando la que tenían.

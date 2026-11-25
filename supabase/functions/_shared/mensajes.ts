@@ -95,6 +95,12 @@ export interface DatosAlerta {
   historial?: { estado: Estado; actor: string | null; en: string }[];
 }
 
+/** «473 123 4567» → «473 ••• ••67»: suficiente para reconocerlo, inútil si el mensaje se filtra. */
+export function enmascarar(tel: string): string {
+  const d = tel.replace(/\D/g, '');
+  return d.length < 6 ? '•••' : `${d.slice(0, 3)} ••• ••${d.slice(-2)}`;
+}
+
 /** Texto de la alerta (HTML de Telegram; máx. 1024 caracteres en fotos). */
 export function textoAlerta(d: DatosAlerta): string {
   const l: string[] = [
@@ -105,7 +111,8 @@ export function textoAlerta(d: DatosAlerta): string {
   if (d.referencia) l.push(`Referencia: ${escapar(d.referencia)}`);
   if (d.comentario) l.push(`«${escapar(d.comentario.slice(0, 220))}»`);
   const quien = d.anonimo ? 'Anónimo' : (d.nombre ? escapar(d.nombre) : 'Sin nombre');
-  l.push(`Reporta: ${quien}${d.telefono ? ` · <a href="tel:${encodeURIComponent(d.telefono)}">${escapar(d.telefono)}</a>` : ''}`);
+  // El grupo de Telegram puede reenviarse: el teléfono completo solo se ve en el panel.
+  l.push(`Reporta: ${quien}${d.telefono ? ` · tel. ${escapar(enmascarar(d.telefono))} (completo en el panel)` : ''}`);
   l.push(`<a href="https://www.google.com/maps/dir/?api=1&amp;destination=${d.lat},${d.lon}">Abrir ruta en Google Maps</a>` +
     (d.precision_m ? ` (±${d.precision_m} m)` : ''));
   for (const h of d.historial ?? []) {
@@ -128,7 +135,7 @@ export function textoRevision(v: DatosRevision): string {
   if (v.inmueble) l.push(`Inmueble: ${escapar(v.inmueble)}`);
   l.push(`Dirección: ${escapar(v.direccion)}`);
   if (v.horario_preferido) l.push(`Horario preferido: ${escapar(v.horario_preferido)}`);
-  l.push(`Contacto: ${escapar(v.nombre)} · <a href="tel:${encodeURIComponent(v.telefono)}">${escapar(v.telefono)}</a>`);
+  l.push(`Contacto: ${escapar(v.nombre)} · tel. ${escapar(enmascarar(v.telefono))} (completo en el panel)`);
   if (v.comentario) l.push(`«${escapar(v.comentario.slice(0, 200))}»`);
   if (v.fecha) l.push(`Fecha: ${escapar(fechaMx(v.fecha))}${v.asignado ? ` · va ${escapar(v.asignado)}` : ''}`);
   return l.join('\n');

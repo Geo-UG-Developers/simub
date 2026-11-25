@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { leerBoton, leerComando, teclado, textoAlerta, textoRevision } from './mensajes.ts';
+import { enmascarar, leerBoton, leerComando, teclado, textoAlerta, textoRevision } from './mensajes.ts';
 
 const ID = '0f8b6c1e-2a4d-4c5e-9f00-1234567890ab';
 
@@ -27,6 +27,13 @@ Deno.test('texto de alerta escapa HTML y respeta 1024', () => {
   assert.ok(t.includes('&lt;cilindro&gt;'));
   assert.ok(t.length <= 1024);
   assert.ok(t.startsWith('<b>NUEVO REPORTE</b>'));
+});
+
+Deno.test('el teléfono no va completo a Telegram', () => {
+  const t = textoAlerta({ folio: 'SIM-26-0002', tipo: 'gas', estado: 'enviado', lat: 21, lon: -101, nombre: 'Ana', telefono: '473 123 4567' });
+  assert.ok(!t.includes('4567') && !t.includes('1234567'));
+  assert.ok(t.includes('473 ••• ••67'));
+  assert.equal(enmascarar('12'), '•••');
 });
 
 Deno.test('texto de revisión', () => {

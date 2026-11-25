@@ -1,11 +1,11 @@
-name: Respaldo semanal de la base (cifrado)
-# Cada domingo exporta la base de datos (estructura y datos), la cifra con la contraseña de la base
+name: Respaldo diario de la base (cifrado)
+# Cada día exporta la base de datos (estructura y datos), la cifra con la contraseña de la base
 # (secreto SUPABASE_DB_PASSWORD) y la guarda 90 días en Actions › este flujo › Artifacts.
 # Aunque el repositorio es público, el archivo cifrado no se puede abrir sin esa contraseña.
 # Cómo restaurar: ver RESPALDOS.md
 on:
   schedule:
-    - cron: '41 9 * * 0'   # domingo 3:41 a. m. hora de Guanajuato
+    - cron: '41 9 * * *'   # diario 3:41 a. m. hora de Guanajuato
   workflow_dispatch:
 
 jobs:

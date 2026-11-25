@@ -1,11 +1,11 @@
 // Aviso de privacidad y términos de uso de SIMUB.
 // Borrador basado en la Ley Federal de Protección de Datos Personales en Posesión de los Particulares;
-// lo deben revisar SIMUB y la Universidad antes de publicar en tiendas. Los [corchetes] son datos pendientes.
-export const FECHA_LEGAL = '26 de octubre de 2026';
+// lo deben revisar SIMUB y la Universidad antes de publicar en tiendas. Datos de SIMUB entregados en noviembre de 2026.
+export const FECHA_LEGAL = '25 de noviembre de 2026';
 
 export const PRIVACIDAD = `
 <h2>Aviso de privacidad integral</h2>
-<p><b>Responsable.</b> Bomberos SIMUB Voluntarios, A.C. («SIMUB»), con domicilio en [domicilio de la estación], Guanajuato, Gto.,
+<p><b>Responsable.</b> Bomberos SIMUB Voluntarios, A.C. («SIMUB»), con domicilio en Mezquite Mocho #1, Guanajuato, Gto.,
 es responsable del uso y protección de tus datos personales. La app fue desarrollada sin costo por GEO UG Developers
 (Universidad de Guanajuato / GeoUG), que la mantiene técnicamente como encargado y solo trata los datos para que la app funcione.</p>
 <h3>Qué datos recabamos</h3>
@@ -35,7 +35,7 @@ del personal) y GitHub (alojamiento de la app). Estos servicios pueden estar fue
 después solo se conservan datos sin identificarte (tipo, fecha y zona aproximada) para estadística.</p>
 <h3>Tus derechos (ARCO)</h3>
 <p>Puedes pedir acceso, rectificación, cancelación u oposición al uso de tus datos, o revocar tu consentimiento, escribiendo a
-[correo de contacto de SIMUB] con tu folio y lo que solicitas. Responderemos en un máximo de 20 días hábiles.
+admonsimub@gmail.com con tu folio y lo que solicitas. Responderemos en un máximo de 20 días hábiles.
 Si consideras que tu derecho fue vulnerado, puedes acudir a la autoridad en materia de protección de datos personales.</p>
 <h3>Cambios a este aviso</h3>
 <p>Cualquier cambio se publicará en esta misma sección de la app. Última actualización: ${FECHA_LEGAL}.</p>`;

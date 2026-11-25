@@ -512,7 +512,11 @@ function apoya() {
       <section class="tarjeta"><h2 class="sec">Súmate como voluntario</h2><p>${pendiente(d?.voluntariado?.startsWith('[') ? '' : d?.voluntariado, d?.voluntariado ?? '')}</p>
         ${telEstacion() ? `<a class="boton claro" href="tel:${telEstacion()}">${I.mano(18)} Quiero ser voluntario</a>` : ''}</section>
       <section class="tarjeta"><h2 class="sec">Quiénes somos</h2><p>${esc(e?.quienes_somos ?? '')}</p>
-        <p class="tenue">${esc(e?.nombre ?? '')} · ${pendiente(e?.telefono ? e.telefono : '', e?.telefono_texto ?? '[Teléfono]')}</p></section>
+        <p class="tenue">${esc(e?.nombre ?? '')} · ${pendiente(e?.direccion?.startsWith('[') ? '' : e?.direccion, '')}</p>
+        <p class="enlaces-est">${telEstacion() ? `<a href="tel:${telEstacion()}">${I.tel(16)} ${esc(e?.telefono_texto ?? e?.telefono)}</a>` : ''}
+          ${e?.whatsapp ? `<a href="https://wa.me/52${esc(e.whatsapp.replace(/\D/g, ''))}" target="_blank" rel="noopener">WhatsApp ${esc(e.whatsapp_texto ?? e.whatsapp)}</a>` : ''}
+          ${e?.correo ? `<a href="mailto:${esc(e.correo)}">${esc(e.correo)}</a>` : ''}
+          ${Object.entries(e?.redes ?? {}).filter(([, u]) => /^https:\/\//.test(u)).map(([k, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(k[0].toUpperCase() + k.slice(1))}</a>`).join('')}</p></section>
       <p class="legal centro"><a href="#/privacidad">Aviso de privacidad</a> · <a href="#/terminos">Términos de uso</a></p>
       <p class="credito oscuro"><img src="${BASE}geoug.png" alt=""><span>App desarrollada sin costo por <b>GEO UG Developers</b> · Universidad de Guanajuato</span></p>`;
     document.getElementById('copiar')?.addEventListener('click', async () => {

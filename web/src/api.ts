@@ -25,7 +25,7 @@ export interface MiRevision {
 export interface Noticia { id: string; categoria: 'evento' | 'donacion' | 'aviso'; titulo: string; texto: string; foto: string | null; destacada: boolean; publicada_en: string }
 export interface InfoPublica {
   config: {
-    estacion?: { nombre: string; telefono: string; telefono_texto?: string; direccion: string; horario: string; correo?: string; quienes_somos: string; redes?: Record<string, string> };
+    estacion?: { nombre: string; telefono: string; telefono_texto?: string; direccion: string; horario: string; correo?: string; quienes_somos: string; redes?: Record<string, string>; whatsapp?: string; whatsapp_texto?: string; no_atendemos?: string[] };
     donativos?: { titular: string; banco: string; clabe: string; clabe_texto?: string; concepto: string; enlace_pago: string; montos: number[];
       recibo_deducible: boolean; contacto_recibo: string; voluntariado: string };
     revisiones?: { dias: string; horario: string; costo: string; anticipacion_dias: number };

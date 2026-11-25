@@ -12,7 +12,7 @@ export interface Yo { rol: Rol; nombre: string; alertas_vinculado: boolean }
 export interface Reporte {
   id: string; folio: string; tipo: Tipo; estado: Estado; lat: number; lon: number; referencia: string | null;
   detalles: { resumen?: string[] }; creado_en: string; actualizado_en: string; escalado: boolean; num_fotos: number;
-  tiene_parte: boolean; ultimo_actor: string | null; min_a_visto: number | null; min_a_lugar: number | null; min_a_cierre: number | null;
+  tiene_parte: boolean; servicio_id?: string | null; ultimo_actor: string | null; min_a_visto: number | null; min_a_lugar: number | null; min_a_cierre: number | null;
 }
 export interface Detalle extends Reporte {
   comentario: string | null; nombre: string | null; telefono: string | null; anonimo: boolean; precision_m: number | null;
@@ -92,3 +92,43 @@ export async function guardarConfig(clave: string, valor: unknown) {
   const { error } = await dbp.from('config_publica').upsert({ clave, valor, actualizado_en: new Date().toISOString() });
   if (error) throw new Error(error.message);
 }
+
+// ---------------------------------------------------------------- servicios (folio único, centro de mando)
+export type EstadoServicio = 'activo' | 'cerrado' | 'anulado';
+export type EstadoUnidad = 'disponible' | 'en_servicio' | 'fuera_servicio';
+export interface Tripulante { unidad: string; maquinista: string; jefe: string; bomberos: string }
+export interface Servicio {
+  id: string; anio: number; folio: number; estado: EstadoServicio; origen: 'captura' | 'app' | 'historico'; reporte_id: string | null;
+  clasificacion: string; especificacion: string | null; falsa_alarma: boolean; fecha: string;
+  h_reporte: string | null; h_despacho: string | null; h_llegada: string | null; h_disponible: string | null; h_base: string | null;
+  km_salida: number | null; km_llegada: number | null; lugar: string | null; lat: number | null; lon: number | null; area_afectada: string | null;
+  medio: string | null; reportante: string | null; telefono: string | null; unidades: string[]; personal_num: number | null;
+  tripulacion: Tripulante[]; datos: Record<string, string>; vehiculos: Record<string, string>[];
+  apoyos: Record<string, { unidades?: string; encargado?: string }>; personas: { nombre: string; codigo: string; edad: string }[];
+  observaciones: string | null; jefe_servicio: string | null; radio_operador: string | null; jefe_guardia: string | null;
+  creado_en: string; actualizado_en: string;
+  bitacora?: { texto: string; autor: string | null; en: string }[]; reporte_folio?: string | null;
+}
+export type ServicioLista = Pick<Servicio, 'id' | 'anio' | 'folio' | 'estado' | 'origen' | 'clasificacion' | 'especificacion' | 'falsa_alarma' | 'fecha'
+  | 'h_reporte' | 'h_despacho' | 'h_llegada' | 'h_base' | 'lugar' | 'lat' | 'lon' | 'area_afectada' | 'medio' | 'unidades' | 'personal_num' | 'apoyos'> & { con_parte: boolean };
+export interface Unidad { id: number; nombre: string; tipo: string | null; estado: EstadoUnidad; nota: string | null; servicio_id: string | null; desde: string; folio: number | null }
+export interface Mando {
+  servicios: Servicio[]; unidades: Unidad[]; hoy: number;
+  pendientes: { id: string; folio: string; tipo: Tipo; estado: Estado; referencia: string | null; creado_en: string; resumen: string[] | null }[];
+}
+export interface Conteos { conteos: { c: string; mes: number; n: number }[]; apoyos: Record<string, number>; minutos_promedio: number | null }
+
+const dia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const mando = () => rpc<Mando>('panel_mando');
+export const servicio = (id: string) => rpc<Servicio | null>('panel_servicio', { p_id: id });
+export const servicios = (desde: Date, hasta: Date) => rpc<ServicioLista[]>('panel_servicios', { p_desde: dia(desde), p_hasta: dia(hasta) });
+export const guardarServicio = (id: string | null, p: Record<string, unknown>) =>
+  rpc<{ id: string; anio: number; folio: number }>('panel_guardar_servicio', { p_id: id, p });
+export const servicioDesdeReporte = (id: string) => rpc<{ id: string }>('panel_servicio_desde_reporte', { p_reporte: id });
+export const bitacora = (id: string, texto: string | null, hito: string | null = null) => rpc('panel_bitacora', { p_servicio: id, p_texto: texto, p_hito: hito });
+export const cerrarServicio = (id: string) => rpc('panel_cerrar_servicio', { p_servicio: id });
+export const reabrirServicio = (id: string) => rpc('panel_reabrir_servicio', { p_servicio: id });
+export const anularServicio = (id: string, motivo: string) => rpc('panel_anular_servicio', { p_servicio: id, p_motivo: motivo });
+export const estadoUnidad = (id: number, estado: EstadoUnidad, nota: string | null = null) => rpc('panel_unidad', { p_unidad: id, p_estado: estado, p_nota: nota });
+export const conteos = (anio: number) => rpc<Conteos>('panel_conteos', { p_anio: anio });
+export const importarServicios = (filas: unknown[]) => rpc<{ importados: number; omitidos: number }>('panel_importar_servicios', { p_filas: filas });

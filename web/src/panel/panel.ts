@@ -8,9 +8,10 @@ import { FORMULARIOS, MOTIVOS_REVISION, ORDEN_TIPOS } from '../formularios';
 import type { Estado } from '../api';
 import { columnas, horizontales } from './graficas';
 import { entregarPdf, partePdf } from './pdf';
+import { activarImportar, tarjetaImportar, vistaInformes, vistaMando, vistaServicio, vistaServicios, type Ctx } from './mando';
 import {
   accion, actualizar, cerrarRevision, codigos, dbp, detalle, guardarConfig, guardarParte, informe, insertar, proponerFecha,
-  reportes, revisiones, tabla, urlsFotos, yo, type Detalle, type Informe, type Parte, type Reporte, type Revision, type Yo,
+  reportes, revisiones, servicioDesdeReporte, tabla, urlsFotos, yo, type Detalle, type Informe, type Parte, type Reporte, type Revision, type Yo,
 } from './datos';
 
 const BASE = import.meta.env.BASE_URL;
@@ -40,6 +41,8 @@ const ERRORES: Record<string, string> = {
   solo_admin: 'Solo un administrador puede cerrar un reporte.', transicion_invalida: 'Ese estado ya se había marcado.',
   cerrado: 'Este reporte ya está cerrado.', tiempo_vencido: 'Ya pasaron 2 minutos; ese cambio ya no se puede deshacer.',
   sin_permiso: 'Tu cuenta no tiene permiso para esto.', fecha_pasada: 'La fecha ya pasó.',
+  clasificacion_invalida: 'Elige el tipo de servicio.', anulado: 'Este folio está anulado.', texto_vacio: 'Escribe el texto.',
+  solo_admin_imp: 'Solo un administrador puede importar.',
 };
 const ROL_TXT = { admin: 'Administrador', coordinador: 'Coordinación', guardia: 'Guardia' };
 
@@ -184,17 +187,18 @@ async function salir() { limpiar(); await dbp.auth.signOut(); mio = null; histor
 
 // ---------------------------------------------------------------- marco
 const SECCIONES = [
-  { id: 'guardia', txt: 'Tablero de guardia', ic: I.campana },
-  { id: 'reportes', txt: 'Reportes', ic: I.lista },
+  { id: 'mando', txt: 'Centro de mando', ic: I.unidad },
+  { id: 'reportes', txt: 'Reportes de la app', ic: I.campana },
+  { id: 'servicios', txt: 'Servicios y partes', ic: I.lista },
   { id: 'agenda', txt: 'Revisiones', ic: I.calendario },
-  { id: 'informe', txt: 'Informe mensual', ic: I.noticias },
+  { id: 'informe', txt: 'Informes', ic: I.noticias },
   { id: 'ajustes', txt: 'Ajustes', ic: I.escudo, admin: true },
 ];
 function marco(activa: string, titulo: string, sub: string, contenido: string, acciones = '') {
   raiz.innerHTML = `
   <div class="marco">
     <aside class="lateral">
-      <a class="logo" href="#reportes"><img src="${BASE}escudo-192.png" alt=""><span><b>SIMUB</b><small>Panel de la estación</small></span></a>
+      <a class="logo" href="#mando"><img src="${BASE}escudo-192.png" alt=""><span><b>SIMUB</b><small>Panel de la estación</small></span></a>
       <nav aria-label="Secciones">${SECCIONES.filter((s) => !s.admin || mio!.rol === 'admin').map((s) =>
         `<a href="#${s.id}" class="${s.id === activa ? 'on' : ''}" ${s.id === activa ? 'aria-current="page"' : ''}>${s.ic(18)}<span>${s.txt}</span><em id="n-${s.id}"></em></a>`).join('')}</nav>
       <div class="pie-lateral"><b>${esc(mio!.nombre || correo)}</b><span>${ROL_TXT[mio!.rol]}</span>
@@ -213,6 +217,13 @@ function marco(activa: string, titulo: string, sub: string, contenido: string, a
   }).catch(() => {});
 }
 
+// Contexto para los módulos de servicios (centro de mando, partes, informes).
+const ctx: Ctx = {
+  raiz, rol: () => mio!.rol, marco, aviso, errores: ERRORES,
+  ciclo: (fn, ms) => { ciclo = window.setInterval(fn, ms); },
+  nuevoMapa: (id) => { mapa = L.map(id); capaBase(mapa); return mapa; },
+};
+
 // ================================================================ TABLERO DE GUARDIA
 function vistaGuardia() {
   document.body.classList.add('modo-guardia');
@@ -224,7 +235,7 @@ function vistaGuardia() {
       <button class="btn g-btn" id="g-activar">${I.campana(18)} Activar tablero</button>
       <button class="btn g-btn" id="g-silencio" hidden>Silenciar 1 min</button>
       <button class="btn g-btn" id="g-pantalla">Pantalla completa</button>
-      <a class="btn g-btn" href="#reportes">Salir</a>
+      <a class="btn g-btn" href="#mando">Salir</a>
     </header>
     <div class="g-cuerpo">
       <section class="g-lista" id="g-lista" aria-live="polite"></section>
@@ -361,7 +372,9 @@ async function pintarDetalle(id: string, centrar: boolean) {
       <div><button class="btn rojo" id="si">Sí, confirmar</button><button class="btn" id="no">Cancelar</button></div></div>` : ''}
     ${d.puede_deshacer ? '<button class="btn tenue-btn" id="deshacer">Deshacer último cambio (2 min)</button>' : ''}
     ${!d.tg_message_id && !ES_CIERRE(d.estado) ? '<button class="btn" id="reenviar">Enviar al grupo de Telegram</button>' : ''}
-    ${d.estado === 'cerrado' ? `<a class="btn ${d.parte ? '' : 'primario'}" href="#parte/${d.id}">${d.parte ? 'Ver o editar parte de servicio' : 'Llenar parte de servicio'}</a>` : ''}
+    ${d.servicio_id ? `<a class="btn primario" href="#servicio/${d.servicio_id}">Ver servicio y parte</a>`
+      : d.estado !== 'falso' ? '<button class="btn primario" id="abrir-serv">Abrir servicio (folio y parte)</button>' : ''}
+    ${d.parte ? `<a class="btn" href="#parte/${d.id}">Parte anterior (formato simple)</a>` : ''}
     <h3>Historial</h3><ol class="hist"><li><b>Enviado</b> · ${horaCorta(d.creado_en)}</li>${d.historial.map((h) => `<li><b>${ESTADO[h.estado].txt}</b>${h.actor ? ` por ${esc(h.actor)}` : ''} · ${horaCorta(h.en)}</li>`).join('')}</ol>`;
   urlsFotos(d.fotos).then((us) => { const e = document.getElementById('fotos'); if (e) e.innerHTML = us.map((u) => `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="Foto del reporte"></a>`).join(''); });
   const cambiar = async (e: Estado) => {
@@ -374,6 +387,9 @@ async function pintarDetalle(id: string, centrar: boolean) {
   }));
   document.getElementById('si')?.addEventListener('click', () => cambiar(confirmando!));
   document.getElementById('no')?.addEventListener('click', () => { confirmando = null; pintarDetalle(id, false); });
+  document.getElementById('abrir-serv')?.addEventListener('click', async () => {
+    try { const r = await servicioDesdeReporte(id); location.hash = `#servicio/${r.id}`; } catch (e) { aviso(ERRORES[(e as Error).message] ?? 'No se pudo abrir el servicio.', true); }
+  });
   document.getElementById('reenviar')?.addEventListener('click', async () => {
     try { await accion({ accion: 'reenviar', reporte: id }); aviso('Enviado al grupo de alertas.'); } catch { aviso('No se pudo enviar. ¿Está vinculado el grupo?', true); }
     pintarDetalle(id, false);
@@ -548,9 +564,9 @@ function abrirRevision(v: Revision, puede: boolean) {
 let mesInforme = new Date().toISOString().slice(0, 7);
 const DIAS = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 async function vistaInforme() {
-  marco('informe', 'Informe mensual', 'Para el ayuntamiento, Protección Civil, donantes y empresas. Se guarda en PDF o Excel.',
+  marco('informe', 'Reportes recibidos por la app', 'Tiempos de respuesta y origen de los reportes ciudadanos. El informe de servicios está en «Mensual» y «Anual».',
     '<div id="informe"><p class="tenue">Calculando…</p></div>',
-    `<label class="mes">Mes <input type="month" id="mes" value="${mesInforme}"></label><button class="btn" id="csv">Excel (CSV)</button><button class="btn primario" id="pdf">Guardar PDF</button>`);
+    `<div class="chips-modo"><a class="chip" href="#informe">Mensual</a><a class="chip" href="#anual">Anual</a><a class="chip on" href="#app">Reportes de la app</a></div><label class="mes">Mes <input type="month" id="mes" value="${mesInforme}"></label>${mio!.rol !== 'guardia' ? '<button class="btn" id="csv">Excel (CSV)</button>' : ''}<button class="btn primario" id="pdf">Guardar PDF</button>`);
   $<HTMLInputElement>('mes').addEventListener('change', (e) => { mesInforme = (e.target as HTMLInputElement).value; vistaInforme(); });
   $('pdf').addEventListener('click', () => window.print());
   const [a, m] = mesInforme.split('-').map(Number);
@@ -580,7 +596,7 @@ async function vistaInforme() {
   mapa = L.map('mapa', { zoomControl: false }).setView([21.019, -101.257], 12); capaBase(mapa);
   const pts: L.LatLngTuple[] = x.servicios.map((s) => { L.circleMarker([s.lat, s.lon], { radius: 6, color: '#fff', weight: 1.5, fillColor: FORMULARIOS[s.tipo].color, fillOpacity: .9 }).addTo(mapa!); return [s.lat, s.lon]; });
   if (pts.length) mapa.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 15 });
-  $('csv').addEventListener('click', () => {
+  document.getElementById('csv')?.addEventListener('click', () => {
     const filas = [['Folio', 'Fecha', 'Tipo', 'Estado', 'Referencia', 'Unidad', 'Personal', 'Qué se hizo', 'Latitud', 'Longitud'],
       ...x.servicios.map((s) => [s.folio, new Date(s.creado_en).toLocaleString('es-MX'), FORMULARIOS[s.tipo].nombre, ESTADO[s.estado].txt, s.referencia ?? '', s.unidad ?? '', (s.personal ?? []).join(', '), s.acciones ?? '', s.lat, s.lon])];
     const csv = '﻿' + filas.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -590,7 +606,7 @@ async function vistaInforme() {
 
 // ================================================================ AJUSTES (admin)
 async function vistaAjustes() {
-  if (mio!.rol !== 'admin') { location.hash = '#reportes'; return; }
+  if (mio!.rol !== 'admin') { location.hash = '#mando'; return; }
   marco('ajustes', 'Ajustes', 'Datos que se muestran en la app, catálogos para el parte de servicio y grupos de Telegram.', '<div id="ajustes" class="ajustes"><p class="tenue">Cargando…</p></div>');
   const [cfg, unidades, personal, noticias, necesidades, cods] = await Promise.all([
     tabla<{ clave: string; valor: Record<string, unknown> }>('config_publica', 'clave'), tabla<{ id: number; nombre: string; tipo: string | null; activa: boolean }>('unidades', 'nombre'),
@@ -608,8 +624,9 @@ async function vistaAjustes() {
   $('ajustes').innerHTML = `
     <section class="tarjeta"><h3>Grupos de Telegram (@SimubGtoBot)</h3><p class="tenue">Agrega el bot al grupo y un administrador escribe <code>/vincular CÓDIGO</code> dentro del grupo.</p>
       <table class="tabla"><tbody>${cods.map((x) => `<tr><td>${ROL_CHAT[x.rol] ?? x.rol}</td><td><code>${esc(x.codigo)}</code></td><td>${x.vinculado ? '<em class="pill p-verde">Vinculado</em>' : '<em class="pill p-gris">Sin vincular</em>'}</td></tr>`).join('')}</tbody></table></section>
+    ${tarjetaImportar}
     <section class="tarjeta peligro"><h3>Preparar para producción</h3>
-      <p class="tenue">Borra <b>todos</b> los reportes, revisiones y partes de servicio capturados en pruebas, sus fotos y las noticias de ejemplo.
+      <p class="tenue">Borra <b>todos</b> los reportes, revisiones y servicios capturados en pruebas, sus fotos y las noticias de ejemplo. El histórico importado del Excel se conserva.
       Los folios vuelven a empezar en 0001. Los datos de la estación, unidades y personal se conservan. No se puede deshacer.</p>
       <div class="fila-btn"><input id="confirma-limpiar" placeholder="Escribe BORRAR para confirmar"><button class="btn rojo" id="limpiar" type="button">Borrar datos de prueba</button></div></section>
     <form class="tarjeta" id="f-cfg"><h3>Datos de la estación (se ven en la app)</h3>
@@ -636,6 +653,7 @@ async function vistaAjustes() {
     <section class="tarjeta"><h3>Noticias</h3><p class="tenue">Se publican desde Telegram con /noticia. Aquí puedes ocultarlas o destacarlas.</p>
       <ul class="cat">${noticias.slice().reverse().slice(0, 20).map((n) => `<li class="${n.visible ? '' : 'inactivo'}"><span>${n.destacada ? '★ ' : ''}${esc(n.titulo)} <small>${fecha(n.publicada_en)}</small></span>
       <span>${n.visible ? `<button class="btn chico" data-dest="${n.id}">Destacar</button>` : ''}<button class="btn chico" data-tog="noticias" data-id="${n.id}" data-campo="visible" data-val="${!n.visible}">${n.visible ? 'Ocultar' : 'Mostrar'}</button></span></li>`).join('')}</ul></section>`;
+  activarImportar(ctx);
   $('f-cfg').addEventListener('submit', async (e) => {
     e.preventDefault();
     const nuevos: Record<string, Record<string, unknown>> = JSON.parse(JSON.stringify(c));
@@ -671,11 +689,16 @@ function ir() {
   limpiar();
   if (!mio) return;
   const [ruta, arg] = location.hash.replace(/^#\/?/, '').split('/');
-  switch (ruta || 'reportes') {
+  switch (ruta || 'mando') {
+    case 'mando': return vistaMando(ctx);
     case 'guardia': return vistaGuardia();
     case 'parte': return vistaParte(arg);
+    case 'servicios': return vistaServicios(ctx);
+    case 'servicio': return vistaServicio(ctx, arg);
     case 'agenda': return vistaAgenda(arg);
-    case 'informe': return vistaInforme();
+    case 'informe': return vistaInformes(ctx, 'mes');
+    case 'anual': return vistaInformes(ctx, 'anio');
+    case 'app': return vistaInforme();
     case 'ajustes': return vistaAjustes();
     default: return vistaReportes(arg);
   }
