@@ -15,7 +15,7 @@ const AYUDA = [
   '<b>En el grupo de alertas</b> llegan los reportes de la app con botones: Visto, En camino, En el lugar, Cerrar.',
   'Cerrar o marcar falso lo hace un administrador del grupo y se puede deshacer 2 minutos.',
   '',
-  '<b>En el grupo de comunicación:</b>',
+  '<b>En el grupo de comunicación</b> (o en el de alertas, si eres administrador):',
   '/noticia · publicar una noticia en la app (paso a paso)',
   '/destacar · elegir la noticia principal',
   '/ocultar · quitar una noticia de la app',
@@ -71,7 +71,11 @@ async function mensaje(m: Msg) {
     tg('sendMessage', { chat_id: chat, text, parse_mode: 'HTML', ...extra });
   const c = leerComando(m.text ?? m.caption);
 
-  if (c?.comando === 'id') return responder(`El número de este chat es <code>${chat}</code>`);
+  if (c?.comando === 'id') {
+    const r = await rolDeChat(chat);
+    return responder(`El número de este chat es <code>${chat}</code>.\n` +
+      (r ? `Este grupo está vinculado como <b>${NOMBRE_ROL[r] ?? r}</b>.` : 'Este grupo todavía <b>no está vinculado</b> a SIMUB.'));
+  }
   if (c && ['start', 'ayuda', 'help'].includes(c.comando)) return responder(AYUDA);
   if (c?.comando === 'vincular') {
     if (m.chat.type === 'private') return responder('Usa /vincular dentro del grupo que quieres conectar.');
@@ -93,9 +97,16 @@ async function mensaje(m: Msg) {
   }
 
   const rol = await rolDeChat(chat);
-  const comunicacion = rol === 'comunicacion';
-  if (c && ['noticia', 'destacar', 'ocultar', 'necesidades'].includes(c.comando) && !comunicacion) {
-    return responder('Ese comando funciona en el grupo de comunicación de SIMUB.');
+  // Noticias y donativos: en el grupo de comunicación, o en el de alertas (solo administradores).
+  const comunicacion = rol === 'comunicacion' || rol === 'alertas';
+  if (c && ['noticia', 'destacar', 'ocultar', 'necesidades'].includes(c.comando)) {
+    if (!rol || rol === 'respaldo') {
+      return responder('Este grupo no está vinculado para noticias. En el panel de SIMUB › <b>Ajustes</b> copia el código de ' +
+        '<b>Comunicación</b> y escribe aquí <code>/vincular CÓDIGO</code>. También puedes usar este comando en el grupo de alertas si eres administrador.');
+    }
+    if (rol === 'alertas' && !(await esAdmin(chat, user))) {
+      return responder('En el grupo de alertas, solo un administrador del grupo puede publicar noticias o cambiar necesidades.');
+    }
   }
   if (c?.comando === 'noticia') {
     await guardar(chat, user, 'noticia', 'categoria', { autor: nombreDe(m.from) });
@@ -183,7 +194,7 @@ async function boton(q: any) {
   const actor = nombreDe(q.from);
 
   if (a.tipo === 'noticia' || a.tipo === 'necesidad') {
-    if (rol !== 'comunicacion') return contestar('Esto funciona en el grupo de comunicación.');
+    if (rol !== 'comunicacion' && rol !== 'alertas') return contestar('Este grupo no está vinculado a SIMUB.');
     return a.tipo === 'noticia' ? botonNoticia(q, a.op, a.arg, contestar) : botonNecesidad(q, a.op, a.arg, contestar);
   }
   if (rol !== 'alertas') return contestar('Este grupo no es el de alertas de SIMUB.');
