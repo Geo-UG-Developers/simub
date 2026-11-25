@@ -4,18 +4,26 @@ Using access token from env var...
 Supabase CLI 2.122.0
 Using profile: supabase (supabase.co)
 Using access token from env var...
-2026/11/25 08:23:47 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
-2026/11/25 08:23:47 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
-2026/11/25 08:23:48 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
-2026/11/25 08:23:48 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
-2026/11/25 08:23:48 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
-2026/11/25 08:23:49 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
-2026/11/25 08:23:49 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
+2026/11/25 21:14:28 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
+2026/11/25 21:14:28 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
+2026/11/25 21:14:29 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
+2026/11/25 21:14:29 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
+2026/11/25 21:14:29 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
+2026/11/25 21:14:29 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
+2026/11/25 21:14:30 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
 Finished supabase link.
 A new version of Supabase CLI is available: v3.4.0 (currently installed v2.122.0)
 We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli
 Connecting to remote database...
-Remote database is up to date.
+WARN: no files matched pattern: supabase/seed/90_demo.sql
+Do you want to push these migrations to the remote database?
+ • 20261125000100_servicios.sql
+ • 20261125000200_datos_simub.sql
+ [Y/n] y
+Applying migration 20261125000100_servicios.sql...
+Applying migration 20261125000200_datos_simub.sql...
+Seed files are up to date.
+Finished supabase db push.
 A new version of Supabase CLI is available: v3.4.0 (currently installed v2.122.0)
 We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli
 Uploading asset (reportar): supabase/functions/_shared/servicios.ts
@@ -45,4 +53,4 @@ We recommend updating regularly for new features and bug fixes: https://supabase
 {"ok":true,"result":{"id":8261618880,"is_bot":true,"first_name":"Bot SIMUB App","username":"SimubGtoBot","active_usernames":["SimubGtoBot"],"can_join_groups":true,"can_read_all_group_messages":false,"supports_inline_queries":false,"needs_inline_query_location":false,"supports_guest_queries":false,"can_connect_to_business":false,"has_main_web_app":false,"has_topics_enabled":false,"has_topic_sidebar":false,"allows_users_to_create_topics":false,"can_manage_bots":false,"supports_join_request_queries":false}}
 --- Webhook
 {"ok":true,"result":true,"description":"Webhook is already set"}
-{"ok":true,"result":{"url":"https://mgvlvqhnnfhaytjkrtqj.supabase.co/functions/v1/telegram","has_custom_certificate":false,"pending_update_count":0,"max_connections":40,"ip_address":"172.64.149.246","allowed_updates":["message","callback_query"]}}
+{"ok":true,"result":{"url":"https://mgvlvqhnnfhaytjkrtqj.supabase.co/functions/v1/telegram","has_custom_certificate":false,"pending_update_count":0,"max_connections":40,"ip_address":"104.18.38.10","allowed_updates":["message","callback_query"]}}
