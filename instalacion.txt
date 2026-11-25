@@ -4,23 +4,20 @@ Using access token from env var...
 Supabase CLI 2.122.0
 Using profile: supabase (supabase.co)
 Using access token from env var...
-2026/10/26 13:01:05 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
-2026/10/26 13:01:05 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
-2026/10/26 13:01:06 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
-2026/10/26 13:01:06 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
-2026/10/26 13:01:06 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
-2026/10/26 13:01:07 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
-2026/10/26 13:01:07 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
+2026/11/25 08:23:47 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
+2026/11/25 08:23:47 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
+2026/11/25 08:23:48 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
+2026/11/25 08:23:48 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
+2026/11/25 08:23:48 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
+2026/11/25 08:23:49 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
+2026/11/25 08:23:49 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
 Finished supabase link.
+A new version of Supabase CLI is available: v3.4.0 (currently installed v2.122.0)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli
 Connecting to remote database...
-Do you want to push these migrations to the remote database?
- • 20261026000500_limpieza_proteccion.sql
- [Y/n] y
-Applying migration 20261026000500_limpieza_proteccion.sql...
-Seed files are up to date.
-Finished supabase db push.
-Uploading asset (reportar): supabase/functions/_shared/mensajes.ts
-Uploading asset (reportar): supabase/functions/_shared/alerta.ts
+Remote database is up to date.
+A new version of Supabase CLI is available: v3.4.0 (currently installed v2.122.0)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli
 Uploading asset (reportar): supabase/functions/_shared/servicios.ts
 Deploying Function: salud
 Uploading asset (salud): supabase/functions/salud/index.ts
@@ -39,11 +36,13 @@ Uploading asset (telegram): supabase/functions/_shared/servicios.ts
 Uploading asset (telegram): supabase/functions/_shared/alerta.ts
 Deployed Functions on project mgvlvqhnnfhaytjkrtqj: avisos, panel, reportar, salud, tareas, telegram
 You can inspect your deployment in the Dashboard: https://supabase.com/dashboard/project/mgvlvqhnnfhaytjkrtqj/functions
-│
-◇  Setting secrets...
+A new version of Supabase CLI is available: v3.4.0 (currently installed v2.122.0)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli
 Finished supabase secrets set.
+A new version of Supabase CLI is available: v3.4.0 (currently installed v2.122.0)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli
 --- Bot
-{"ok":true,"result":{"id":8261618880,"is_bot":true,"first_name":"Bot SIMUB App","username":"SimubGtoBot","can_join_groups":true,"can_read_all_group_messages":false,"supports_inline_queries":false,"supports_guest_queries":false,"can_connect_to_business":false,"has_main_web_app":false,"has_topics_enabled":false,"allows_users_to_create_topics":false,"can_manage_bots":false,"supports_join_request_queries":false}}
+{"ok":true,"result":{"id":8261618880,"is_bot":true,"first_name":"Bot SIMUB App","username":"SimubGtoBot","active_usernames":["SimubGtoBot"],"can_join_groups":true,"can_read_all_group_messages":false,"supports_inline_queries":false,"needs_inline_query_location":false,"supports_guest_queries":false,"can_connect_to_business":false,"has_main_web_app":false,"has_topics_enabled":false,"has_topic_sidebar":false,"allows_users_to_create_topics":false,"can_manage_bots":false,"supports_join_request_queries":false}}
 --- Webhook
 {"ok":true,"result":true,"description":"Webhook is already set"}
 {"ok":true,"result":{"url":"https://mgvlvqhnnfhaytjkrtqj.supabase.co/functions/v1/telegram","has_custom_certificate":false,"pending_update_count":0,"max_connections":40,"ip_address":"172.64.149.246","allowed_updates":["message","callback_query"]}}
