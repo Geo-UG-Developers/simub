@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.despliegue.outputs.page_url }}
+      url: ${{ steps.despliegue.outputs.page_url || steps.despliegue2.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,5 +46,17 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: web/dist
+      # GitHub a veces tarda en registrar el artefacto recién subido: se reintenta dos veces.
       - id: despliegue
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - if: steps.despliegue.outcome == 'failure'
+        run: sleep 60
+      - id: despliegue2
+        if: steps.despliegue.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+      - if: steps.despliegue.outcome == 'failure' && steps.despliegue2.outcome == 'failure'
+        run: sleep 120
+      - if: steps.despliegue.outcome == 'failure' && steps.despliegue2.outcome == 'failure'
         uses: actions/deploy-pages@v5
