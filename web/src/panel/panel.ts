@@ -97,19 +97,44 @@ async function pantallaEncendida() {
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && wakeLock) pantallaEncendida(); });
 
 // ---------------------------------------------------------------- acceso
-function pantallaAcceso(mensaje = '') {
+// Campo de contraseña con botón «Ver» (las contraseñas son largas).
+const campoClave = (id: string, etq: string, auto: string) =>
+  `<label>${etq}<span class="clave-caja"><input type="password" id="${id}" autocomplete="${auto}" required minlength="8">
+   <button type="button" class="ver-clave" data-ver="${id}" aria-label="Mostrar contraseña" aria-pressed="false">Ver</button></span></label>`;
+function activarVerClave() {
+  raiz.querySelectorAll<HTMLButtonElement>('[data-ver]').forEach((b) => b.addEventListener('click', () => {
+    const i = $<HTMLInputElement>(b.dataset.ver!); const ver = i.type === 'password';
+    i.type = ver ? 'text' : 'password'; b.textContent = ver ? 'Ocultar' : 'Ver';
+    b.setAttribute('aria-pressed', String(ver)); b.setAttribute('aria-label', ver ? 'Ocultar contraseña' : 'Mostrar contraseña');
+  }));
+}
+const URL_PANEL = location.origin + location.pathname;
+
+function pantallaAcceso(mensaje = '', ok = '') {
   limpiar();
   raiz.innerHTML = `
   <main class="acceso"><form class="caja-acceso" id="form">
     <img src="${BASE}escudo-192.png" alt="" class="escudo-acc"><h1>Panel de la estación</h1>
     <p class="tenue">Bomberos SIMUB Voluntarios, A.C.</p>
     <label>Correo<input type="email" id="correo" autocomplete="username" required></label>
-    <label>Contraseña<input type="password" id="clave" autocomplete="current-password" required></label>
+    ${campoClave('clave', 'Contraseña', 'current-password')}
     ${mensaje ? `<p class="error-txt" role="alert">${esc(mensaje)}</p>` : ''}
+    ${ok ? `<p class="ok-txt" role="status">${esc(ok)}</p>` : ''}
     <button class="btn primario" type="submit">Entrar</button>
+    <button class="enlace-btn" type="button" id="olvide">¿Olvidaste tu contraseña?</button>
     <p class="tenue chica">Las cuentas las da de alta el administrador de SIMUB.</p>
     <p class="credito"><img src="${BASE}geoug.png" alt=""> GEO UG Developers</p>
   </form></main>`;
+  activarVerClave();
+  $('olvide').addEventListener('click', async () => {
+    const correoTxt = $<HTMLInputElement>('correo').value.trim();
+    if (!correoTxt) return pantallaAcceso('Escribe tu correo arriba y vuelve a tocar «¿Olvidaste tu contraseña?».');
+    const { error } = await dbp.auth.resetPasswordForEmail(correoTxt, { redirectTo: URL_PANEL });
+    if (error) return pantallaAcceso(/rate|limit/i.test(error.message)
+      ? 'Se enviaron demasiados correos. Espera una hora o pide al administrador que cambie tu contraseña.'
+      : 'No se pudo enviar el correo. Pide al administrador que cambie tu contraseña.');
+    pantallaAcceso('', 'Si el correo está dado de alta, te llegará un enlace para crear una contraseña nueva. Revisa también «Spam».');
+  });
   $('form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const { error } = await dbp.auth.signInWithPassword({ email: $<HTMLInputElement>('correo').value.trim(), password: $<HTMLInputElement>('clave').value });
@@ -117,7 +142,32 @@ function pantallaAcceso(mensaje = '') {
     iniciar();
   });
 }
+// Al abrir el enlace del correo de recuperación, Supabase avisa con PASSWORD_RECOVERY.
+function pantallaNuevaClave(mensaje = '') {
+  limpiar();
+  raiz.innerHTML = `<main class="acceso"><form class="caja-acceso" id="form-nueva">
+    <img src="${BASE}escudo-192.png" alt="" class="escudo-acc"><h1>Contraseña nueva</h1>
+    <p class="tenue">Usa al menos 8 caracteres. Una frase larga es más segura y fácil de recordar.</p>
+    ${campoClave('nueva1', 'Contraseña nueva', 'new-password')}${campoClave('nueva2', 'Repítela', 'new-password')}
+    ${mensaje ? `<p class="error-txt" role="alert">${esc(mensaje)}</p>` : ''}
+    <button class="btn primario" type="submit">Guardar contraseña</button></form></main>`;
+  activarVerClave();
+  $('form-nueva').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const a = $<HTMLInputElement>('nueva1').value, b = $<HTMLInputElement>('nueva2').value;
+    if (a.length < 8) return pantallaNuevaClave('Debe tener al menos 8 caracteres.');
+    if (a !== b) return pantallaNuevaClave('Las dos contraseñas no coinciden.');
+    const { error } = await dbp.auth.updateUser({ password: a });
+    if (error) return pantallaNuevaClave('No se pudo guardar. El enlace pudo haber vencido: pide otro.');
+    history.replaceState(null, '', location.pathname);
+    aviso('Contraseña actualizada.'); iniciar();
+  });
+}
+let recuperando = false;
+dbp.auth.onAuthStateChange((evento) => { if (evento === 'PASSWORD_RECOVERY') { recuperando = true; pantallaNuevaClave(); } });
+
 async function iniciar() {
+  if (recuperando || /type=recovery/.test(location.hash)) return;   // espera la pantalla de contraseña nueva
   const { data } = await dbp.auth.getSession();
   if (!data.session || data.session.user.is_anonymous) return pantallaAcceso();
   correo = data.session.user.email ?? '';
