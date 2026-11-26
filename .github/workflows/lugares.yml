@@ -1,0 +1,54 @@
+name: Lugares de Guanajuato (OpenStreetMap)
+# Descarga de OpenStreetMap (Overpass) colonias, barrios, comunidades y calles del municipio de Guanajuato
+# y deja web/public/lugares-gto.json en la rama «datos-osm». Datos © colaboradores de OpenStreetMap (ODbL).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lugares:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Consultar Overpass
+        run: |
+          cat > q.txt <<'Q'
+          [out:json][timeout:180];
+          area["boundary"="administrative"]["admin_level"="6"]["name"="Guanajuato"]["is_in:state"!~"."]->.m;
+          (
+            nwr(area.m)["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter|locality|isolated_dwelling|borough)$"]["name"];
+            way(area.m)["landuse"="residential"]["name"];
+            way(area.m)["highway"~"^(primary|secondary|tertiary|residential|unclassified|living_street|trunk|motorway|pedestrian|service|track|footway|steps)$"]["name"];
+          );
+          out tags center;
+          Q
+          for u in https://overpass-api.de/api/interpreter https://overpass.kumi.systems/api/interpreter; do
+            curl -sf --retry 3 -m 240 --data-urlencode data@q.txt "$u" -o osm.json && break
+          done
+          python3 - <<'PY'
+          import json
+          d = json.load(open('osm.json'))['elements']
+          TIPO = {'city': 'Ciudad', 'town': 'Localidad', 'village': 'Comunidad', 'hamlet': 'Comunidad', 'isolated_dwelling': 'Comunidad',
+                  'suburb': 'Colonia', 'neighbourhood': 'Colonia', 'quarter': 'Barrio', 'borough': 'Colonia', 'locality': 'Paraje'}
+          out = {}
+          for e in d:
+              t = e.get('tags', {}); n = (t.get('name') or '').strip()
+              if not n: continue
+              c = e.get('center') or {'lat': e.get('lat'), 'lon': e.get('lon')}
+              if 'place' in t: tipo = TIPO.get(t['place'], 'Lugar')
+              elif t.get('landuse') == 'residential': tipo = 'Colonia'
+              else: tipo = 'Calle'
+              k = (n.lower(), tipo)
+              if k not in out and c.get('lat'): out[k] = {'n': n, 't': tipo, 'lat': round(c['lat'], 5), 'lon': round(c['lon'], 5)}
+          lst = sorted(out.values(), key=lambda x: (x['t'] == 'Calle', x['n']))
+          print(len(lst), 'lugares;', sum(1 for x in lst if x['t'] != 'Calle'), 'no calles')
+          json.dump({'fuente': '© colaboradores de OpenStreetMap (ODbL)', 'lugares': lst}, open('lugares-gto.json', 'w'), ensure_ascii=False, separators=(',', ':'))
+          PY
+      - name: Guardar en la rama datos-osm
+        run: |
+          git config user.name "github-actions" && git config user.email "github-actions@users.noreply.github.com"
+          git fetch origin datos-osm || true
+          git checkout --orphan datos-osm-nueva && git rm -rq --cached . && mkdir -p web/public && mv lugares-gto.json web/public/
+          git add web/public/lugares-gto.json && git commit -qm "Lugares de Guanajuato desde OpenStreetMap" && git push -f origin HEAD:datos-osm
