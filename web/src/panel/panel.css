@@ -19,7 +19,7 @@ code { background: #F1E9E3; padding: 2px 6px; border-radius: 6px; font-size: 14p
 .caja-acceso { width: 100%; max-width: 380px; background: #fff; border-radius: 20px; padding: 28px; display: flex; flex-direction: column; gap: 12px; }
 .escudo-acc { width: 92px; height: 92px; align-self: center; }
 .caja-acceso h1 { text-align: center; font-size: 26px; } .caja-acceso .tenue { text-align: center; }
-.caja-acceso label, .parte label, .cajon label, .ajustes label { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: 14px; }
+.caja-acceso label, .parte label, .cajon label, .ajustes label, .captura label { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: 14px; }
 input, select, textarea { font: inherit; font-weight: 400; padding: 9px 11px; border: 1px solid var(--borde); border-radius: 10px; background: #fff; color: var(--tinta); }
 textarea { resize: vertical; }
 .error-txt { color: var(--rojo); margin: 0; }
@@ -221,6 +221,45 @@ blockquote.agregado { border-left: 3px solid var(--dorado); } blockquote small {
   .parte-cab2 { grid-template-columns: 1fr 1fr; } .m-cron { grid-template-columns: repeat(2, 1fr); }
 }
 
+/* Turno, clima, captura 911, listas y firmas */
+.en-turno { margin: 2px 0 0; font-size: 14px; }
+.clima { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--borde); background: #fff; border-radius: 99px; padding: 4px 6px 4px 12px; font: inherit; font-size: 13.5px; cursor: pointer; color: var(--tinta); }
+.clima.sin { padding: 6px 12px; color: var(--tenue); }
+.riesgo { padding: 3px 9px; border-radius: 99px; font-size: 12px; white-space: nowrap; }
+.r0 { background: #E2F2E6; color: #1E6B34; } .r1 { background: #FFF1C9; color: #7A5A00; } .r2 { background: #FFD9B3; color: #8A3B00; } .r3 { background: #B3261E; color: #fff; }
+.g-barra .clima { background: rgba(255,255,255,.08); color: #fff; border-color: rgba(255,255,255,.25); }
+.regla30 { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.regla30 li { display: flex; gap: 10px; align-items: center; background: #F4EFEC; border-radius: 10px; padding: 8px 10px; } .regla30 li span { margin-left: auto; font-weight: 700; }
+.regla30 li.si { background: #FFE3D0; } .riesgo-grande { font-size: 18px; padding: 10px 12px; border-radius: 12px; margin: 8px 0 0; }
+.mchip { min-height: 38px; padding: 0 13px; border-radius: 99px; border: 1px solid var(--borde); background: #fff; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
+.mchip.on { background: var(--guinda); border-color: var(--guinda); color: #fff; } .mchip:disabled { opacity: .45; cursor: not-allowed; }
+.mchip.ocupada:not(.on) { border-color: var(--rojo); color: var(--rojo); } .mchip small { font-weight: 400; }
+.multi { display: flex; flex-direction: column; gap: 6px; } .multi-chips, .chips-sel { display: flex; flex-wrap: wrap; gap: 6px; }
+.multi-otro { max-width: 260px; } .t-form .multi { min-width: 220px; }
+.captura { display: flex; flex-direction: column; gap: 12px; } .captura h3 { color: var(--guinda); }
+.tipos-g { display: grid; grid-template-columns: 150px 1fr; gap: 8px; align-items: start; padding: 4px 0; border-top: 1px solid #F0E8E3; }
+.tipos-g > span { font-weight: 700; font-size: 13px; color: var(--tenue); padding-top: 9px; } .tipos-g > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.tipo-b { min-height: 40px; padding: 0 12px; border-radius: 10px; border: 2px solid var(--c); background: #fff; font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+.tipo-b.on { background: var(--c); box-shadow: 0 0 0 3px var(--tinta) inset; }
+.cap-pie { position: sticky; bottom: 0; background: var(--fondo); padding: 10px 0; display: flex; gap: 14px; align-items: center; }
+.btn.grande { min-height: 54px; font-size: 18px; padding: 0 26px; }
+.folio-ok { align-items: center; text-align: center; padding: 28px; color: var(--verde); } .folio-ok b { font-family: 'Barlow Condensed', sans-serif; font-size: 54px; color: var(--guinda); } .folio-ok p { color: var(--tinta); }
+.area { display: flex; gap: 6px; } .area .area-n { flex: 1; min-width: 0; } .area select { width: 76px; }
+.con-ahora { display: flex; gap: 4px; } .con-ahora input { flex: 1; min-width: 0; }
+fieldset.sin-borde { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.firmas { align-items: stretch; } .firma-caja { border: 1px dashed var(--borde); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.firma-caja img { width: 100%; height: 80px; object-fit: contain; background: #fff; border-bottom: 1px solid #999; }
+.firma-vacia { height: 80px; display: flex; align-items: center; justify-content: center; color: var(--tenue); border-bottom: 1px solid #999; font-size: 13px; }
+.lienzo-firma { width: 100%; height: 220px; background: #fff; border: 2px solid var(--borde); border-radius: 12px; touch-action: none; }
+.aviso-candado { background: #FFF4DC; border: 1px solid #E8C77A; border-radius: 12px; padding: 10px 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.aviso-candado.chico { font-size: 13.5px; }
+.chips-col { display: flex; flex-wrap: wrap; gap: 6px; max-height: 220px; overflow: auto; }
+.chip-col { display: inline-flex; align-items: center; gap: 4px; background: #F4EFEC; border-radius: 99px; padding: 4px 4px 4px 10px; font-size: 13px; }
+.chip-col button { border: 0; background: none; cursor: pointer; color: var(--tenue); padding: 0 6px; }
+input.corto { max-width: 80px; min-width: 60px !important; }
+.pie-lateral .chica { opacity: .7; }
+@media (max-width: 820px) { .tipos-g { grid-template-columns: 1fr; } .tipos-g > span { padding-top: 0; } }
+
 /* Impresión: parte de servicio e informe salen limpios en PDF */
 @media print {
   @page { margin: 14mm; }
@@ -237,3 +276,5 @@ blockquote.agregado { border-left: 3px solid var(--dorado); } blockquote small {
   .inf-mes { grid-template-columns: 300px 1fr; }
 }
 .t-form input[type=checkbox] { width: auto; min-width: 0; } .fila-check2 { justify-content: flex-start; text-align: left; } .m-lugar { display: block; }
+
+[hidden] { display: none !important; }

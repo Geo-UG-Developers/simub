@@ -8,7 +8,7 @@ export const dbp = createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 export type Rol = 'admin' | 'coordinador' | 'guardia';
-export interface Yo { rol: Rol; nombre: string; alertas_vinculado: boolean }
+export interface Yo { rol: Rol; nombre: string; cargo: string | null; super: boolean; alertas_vinculado: boolean }
 export interface Reporte {
   id: string; folio: string; tipo: Tipo; estado: Estado; lat: number; lon: number; referencia: string | null;
   detalles: { resumen?: string[] }; creado_en: string; actualizado_en: string; escalado: boolean; num_fotos: number;
@@ -106,11 +106,12 @@ export interface Servicio {
   tripulacion: Tripulante[]; datos: Record<string, string>; vehiculos: Record<string, string>[];
   apoyos: Record<string, { unidades?: string; encargado?: string }>; personas: { nombre: string; codigo: string; edad: string }[];
   observaciones: string | null; jefe_servicio: string | null; radio_operador: string | null; jefe_guardia: string | null;
-  creado_en: string; actualizado_en: string;
+  creado_en: string; actualizado_en: string; colonia: string | null; capturo: string | null; editado_por: string | null;
+  firmas: Record<string, { nombre: string | null; imagen: string; en: string; registro: string }>; bloqueado: boolean; huella: string | null; puede_editar?: boolean;
   bitacora?: { texto: string; autor: string | null; en: string }[]; reporte_folio?: string | null;
 }
 export type ServicioLista = Pick<Servicio, 'id' | 'anio' | 'folio' | 'estado' | 'origen' | 'clasificacion' | 'especificacion' | 'falsa_alarma' | 'fecha'
-  | 'h_reporte' | 'h_despacho' | 'h_llegada' | 'h_base' | 'lugar' | 'lat' | 'lon' | 'area_afectada' | 'medio' | 'unidades' | 'personal_num' | 'apoyos'> & { con_parte: boolean };
+  | 'h_reporte' | 'h_despacho' | 'h_llegada' | 'h_base' | 'lugar' | 'colonia' | 'capturo' | 'lat' | 'lon' | 'area_afectada' | 'medio' | 'unidades' | 'personal_num' | 'apoyos'> & { con_parte: boolean; firmado: boolean };
 export interface Unidad { id: number; nombre: string; tipo: string | null; estado: EstadoUnidad; nota: string | null; servicio_id: string | null; desde: string; folio: number | null }
 export interface Mando {
   servicios: Servicio[]; unidades: Unidad[]; hoy: number;
@@ -132,3 +133,20 @@ export const anularServicio = (id: string, motivo: string) => rpc('panel_anular_
 export const estadoUnidad = (id: number, estado: EstadoUnidad, nota: string | null = null) => rpc('panel_unidad', { p_unidad: id, p_estado: estado, p_nota: nota });
 export const conteos = (anio: number) => rpc<Conteos>('panel_conteos', { p_anio: anio });
 export const importarServicios = (filas: unknown[]) => rpc<{ importados: number; omitidos: number }>('panel_importar_servicios', { p_filas: filas });
+
+// ---------------------------------------------------------------- control interno, firmas, respaldo, voluntariado
+export const sesionIniciar = (equipo: string, anterior: number | null) => rpc<number>('panel_sesion_iniciar', { p_equipo: equipo, p_anterior: anterior });
+export const latido = (id: number) => rpc<{ activa: boolean }>('panel_latido', { p_sesion: id });
+export const sesionCerrar = (id: number, motivo: string) => rpc('panel_sesion_cerrar', { p_sesion: id, p_motivo: motivo });
+export interface Sesion { id: number; nombre: string; rol: string; equipo: string | null; inicio: string; fin: string | null; motivo: string | null; turno_de: string | null; minutos: number; folios: string[] }
+export interface Auditoria { id: number; en: string; quien: string | null; accion: string; tabla: string | null; registro: string | null; detalle: Record<string, unknown> | null }
+export const control = (desde: Date, hasta: Date) => rpc<{ sesiones: Sesion[]; auditoria: Auditoria[]; super: boolean }>('panel_control', { p_desde: desde.toISOString(), p_hasta: hasta.toISOString() });
+export const borrarAuditoria = (ids: number[]) => rpc<{ borradas: number }>('panel_auditoria_borrar', { p_ids: ids });
+export const firmar = (id: string, campo: string, nombre: string, imagen: string | null, huella: string | null) =>
+  rpc('panel_firmar', { p_servicio: id, p_campo: campo, p_nombre: nombre, p_imagen: imagen, p_huella: huella });
+export const desbloquear = (id: string, motivo: string) => rpc('panel_desbloquear', { p_servicio: id, p_motivo: motivo });
+export const respaldo = (anio: number) => rpc<Record<string, unknown> & { servicios: Servicio[]; bitacora: { servicio: string; texto: string; autor: string; en: string }[] }>('panel_respaldo', { p_anio: anio });
+export const registrarImportacion = (resumen: Record<string, unknown>) => rpc('panel_importar_registrar', { p_resumen: resumen });
+export interface Voluntario { id: string; nombre: string; edad: number; telefono: string; correo: string | null; escolaridad: string | null; ocupacion: string | null; disponibilidad: string[]; motivo: string | null; estado: string; creado_en: string }
+export const voluntarios = () => rpc<Voluntario[]>('panel_voluntarios');
+export const estadoVoluntario = (id: string, estado: string) => rpc('panel_voluntario_estado', { p_id: id, p_estado: estado });

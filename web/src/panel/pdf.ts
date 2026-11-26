@@ -139,7 +139,7 @@ export async function servicioPdf(s: Servicio, nombreClase: string, escudoUrl: s
   t(M + 2, y + 4.5, 'Reportante'); val(M + 22, y + 4.5, 60, s.reportante);
   t(M + 90, y + 4.5, 'Medio'); val(M + 102, y + 4.5, 32, s.medio);
   t(M + 136, y + 4.5, 'No. de teléfono', 7.5); val(M + 158, y + 4.5, 30, s.telefono);
-  t(M + 2, y + 10.5, 'Lugar del incidente'); val(M + 32, y + 10.5, CW - 34, [s.lugar, s.lat != null ? `(${s.lat.toFixed(5)}, ${s.lon?.toFixed(5)})` : ''].filter(Boolean).join(' '));
+  t(M + 2, y + 10.5, 'Lugar del incidente'); val(M + 32, y + 10.5, CW - 34, [s.colonia, s.lugar, s.lat != null ? `(${s.lat.toFixed(5)}, ${s.lon?.toFixed(5)})` : ''].filter(Boolean).join(' '));
   y += 17;
 
   // Unidades y tripulación (hasta 3 columnas, como el formato)
@@ -201,14 +201,28 @@ export async function servicioPdf(s: Servicio, nombreClase: string, escudoUrl: s
   y += 5;
   titulo(M, y, CW, 'OBSERVACIONES'); y += 6;
   const obs = doc.splitTextToSize(s.observaciones ?? '', CW - 4) as string[];
-  const altoObs = Math.max(36, obs.length * 4.2 + 4); caja(M, y, CW, altoObs);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(20, 40, 120); doc.text(obs.slice(0, 14), M + 2, y + 4.5);
-  y += altoObs + 10;
+  const altoObs = Math.max(26, Math.min(obs.length, 8) * 4.2 + 4); caja(M, y, CW, altoObs);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(20, 40, 120); doc.text(obs.slice(0, 8), M + 2, y + 4.5);
+  y += altoObs + 6;
   const fw = (CW - 12) / 3;
   ([['Nombre y Firma Jefe de Servicio', s.jefe_servicio], ['Nombre y Firma Radio Operador', s.radio_operador], ['Nombre y Firma Jefe de Guardia', s.jefe_guardia]] as const).forEach(([e, n], i) => {
-    const x = M + i * (fw + 6); caja(x, y, fw, 14); val(x + 2, y + 5, fw - 4, n ?? '', 8.5); doc.line(x, y + 9, x + fw, y + 9); t(x + 2, y + 12.6, e, 7.5);
+    const x = M + i * (fw + 6); caja(x, y, fw, 22); val(x + 2, y + 5, fw - 4, n ?? '', 8.5);
+    const img = s.firmas?.[(['jefe_servicio', 'radio_operador', 'jefe_guardia'] as const)[i]]?.imagen;
+    if (img?.startsWith('data:image/png')) { try { doc.addImage(img, 'PNG', x + 4, y + 6, fw - 8, 10.5); } catch { /* firma dañada */ } }
+    doc.line(x, y + 17, x + fw, y + 17); t(x + 2, y + 20.6, e, 7.5);
   });
+  if (s.huella) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(110, 100, 100);
+    doc.text(`Firmado electrónicamente · huella SHA-256: ${s.huella}`, M, y + 27); }
   doc.setFontSize(7); doc.setTextColor(110, 100, 100);
   doc.text(`Folio ${folio} · generado ${new Date().toLocaleString('es-MX')} · App SIMUB`, W - M, 273, { align: 'right' });
+  // Anexo: vehículos o personas de más, y observaciones largas
+  const vehExtra = (s.vehiculos ?? []).slice(3), perExtra = (s.personas ?? []).slice(7), obsExtra = obs.slice(8);
+  if (vehExtra.length || perExtra.length || obsExtra.length) {
+    doc.addPage(); y = 16; t(M, y, `ANEXO · Folio ${folio}`, 11, true); y += 8;
+    const linea = (txt: string) => { if (y > 265) { doc.addPage(); y = 16; } val(M + 2, y, CW - 4, txt, 8.5); y += 5.5; };
+    if (vehExtra.length) { t(M, y, 'Vehículos involucrados (continuación)', 9, true); y += 6; vehExtra.forEach((v, i) => linea(`${i + 4}. ${['placas', 'color', 'tipo', 'modelo', 'conductor', 'propietario'].map((k) => v[k]).filter(Boolean).join(' · ')}`)); y += 3; }
+    if (perExtra.length) { t(M, y, 'Personas localizadas (continuación)', 9, true); y += 6; perExtra.forEach((p, i) => linea(`${i + 8}. ${[p.nombre, p.codigo, p.edad && `${p.edad} años`].filter(Boolean).join(' · ')}`)); y += 3; }
+    if (obsExtra.length) { t(M, y, 'Observaciones (continuación)', 9, true); y += 6; obsExtra.forEach((l) => linea(l)); }
+  }
   return { blob: doc.output('blob'), nombre: `Parte_SIMUB_${folio}.pdf` };
 }

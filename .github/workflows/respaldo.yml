@@ -1,12 +1,17 @@
 name: Respaldo diario de la base (cifrado)
-# Cada día exporta la base de datos (estructura y datos), la cifra con la contraseña de la base
-# (secreto SUPABASE_DB_PASSWORD) y la guarda 90 días en Actions › este flujo › Artifacts.
+# Cada día exporta la base de datos (estructura y datos) y la cifra con la contraseña de la base (secreto SUPABASE_DB_PASSWORD).
+#   · Diario: 30 días en Actions › este flujo › Artifacts.
+#   · Semanal (domingo): 90 días en Artifacts.
+#   · Mensual (día 1): sin vencimiento, en un «release» en borrador que solo ven quienes administran el repositorio.
 # Aunque el repositorio es público, el archivo cifrado no se puede abrir sin esa contraseña.
 # Cómo restaurar: ver RESPALDOS.md
 on:
   schedule:
     - cron: '41 9 * * *'   # diario 3:41 a. m. hora de Guanajuato
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   respaldo:
@@ -33,8 +38,20 @@ jobs:
           gpg --batch --yes --pinentry-mode loopback --passphrase "$SUPABASE_DB_PASSWORD" --symmetric --cipher-algo AES256 \
             -o "respaldo_$(date -u +%F).tgz.gpg" respaldo.tgz
           rm -f esquema.sql datos.sql respaldo.tgz
+      - name: Tipo de copia
+        id: tipo
+        run: |
+          if [ "$(date -u +%d)" = "01" ]; then echo "t=mensual" >> "$GITHUB_OUTPUT"; elif [ "$(date -u +%u)" = "7" ]; then echo "t=semanal" >> "$GITHUB_OUTPUT"; else echo "t=diaria" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/upload-artifact@v4
         with:
-          name: respaldo-${{ github.run_number }}
+          name: respaldo-${{ steps.tipo.outputs.t }}-${{ github.run_number }}
           path: respaldo_*.tgz.gpg
-          retention-days: 90
+          retention-days: ${{ steps.tipo.outputs.t == 'diaria' && 30 || 90 }}
+      - name: Copia mensual permanente (borrador privado)
+        if: steps.tipo.outputs.t == 'mensual' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view respaldos-mensuales > /dev/null 2>&1 || \
+            gh release create respaldos-mensuales --draft --title "Respaldos mensuales (cifrados)" --notes "Copias cifradas de la base. Ver RESPALDOS.md."
+          gh release upload respaldos-mensuales respaldo_*.tgz.gpg --clobber

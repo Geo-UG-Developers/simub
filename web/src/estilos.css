@@ -212,3 +212,15 @@ button { font-family: inherit; }
 .legal-texto { gap: 8px; } .legal-texto h2 { margin: 0; font-size: 26px; } .legal-texto h3 { margin: 10px 0 0; font-size: 19px; }
 .legal-texto p, .legal-texto li { font-size: 15.5px; line-height: 1.55; } .legal-texto ul { margin: 0; padding-left: 20px; }
 .enlaces-est { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0; } .enlaces-est a { display: inline-flex; gap: 5px; align-items: center; font-weight: 600; }
+/* Donativo paso a paso y voluntariado */
+.monto { background: #fff; font: inherit; font-weight: 700; cursor: pointer; } .monto.on { background: var(--guinda); color: #fff; border-color: var(--guinda); }
+.copiables dd { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fila-botones { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.tarjeta-vol { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 18px; background: linear-gradient(120deg, #6E1C22, #8A2730); color: #fff; text-decoration: none; }
+.tarjeta-vol span { flex: 1; display: flex; flex-direction: column; } .tarjeta-vol small { opacity: .85; }
+.chip-op input { position: absolute; opacity: 0; pointer-events: none; }
+label.chip-op { display: inline-flex; align-items: center; position: relative; }
+label.chip-op:has(input:checked) { border: 2px solid var(--guinda); background: #F1E3E4; color: var(--guinda); }
+fieldset.campo { border: 0; padding: 0; margin: 0; } fieldset.campo legend { font-weight: 600; margin-bottom: 6px; }
+.consent { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; }
+[hidden] { display: none !important; }

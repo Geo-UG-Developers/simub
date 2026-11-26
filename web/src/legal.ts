@@ -33,6 +33,10 @@ del personal) y GitHub (alojamiento de la app). Estos servicios pueden estar fue
 <h3>Cuánto tiempo los guardamos</h3>
 <p>Las fotografías se borran automáticamente a los 6 meses. Tu nombre y teléfono se eliminan de los reportes a los 12 meses;
 después solo se conservan datos sin identificarte (tipo, fecha y zona aproximada) para estadística.</p>
+<h3>Solicitudes de voluntariado</h3>
+<p>Si llenas la solicitud de voluntariado guardamos tu nombre, edad, teléfono, correo, escolaridad y disponibilidad solo para
+contactarte sobre el voluntariado. Se borran automáticamente a los 12 meses. En el grupo interno de Telegram solo se avisa tu
+nombre corto y edad; tu teléfono y correo solo los ve el personal autorizado en el panel de la estación.</p>
 <h3>Tus derechos (ARCO)</h3>
 <p>Puedes pedir acceso, rectificación, cancelación u oposición al uso de tus datos, o revocar tu consentimiento, escribiendo a
 admonsimub@gmail.com con tu folio y lo que solicitas. Responderemos en un máximo de 20 días hábiles.

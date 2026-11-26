@@ -1,12 +1,12 @@
 // Cada minuto (pg_cron): escalamiento, avisos al ciudadano, recordatorios y noticias.
 // Sin secreto: solo procesa lo que ya venció; llamarla de más no hace nada.
-import { chatDe, db, tg, tgFoto } from '../_shared/servicios.ts';
+import { chatDe, db, PANEL_URL, tg, tgFoto } from '../_shared/servicios.ts';
 import { datosAlerta, primeraFoto, responderAlerta } from '../_shared/alerta.ts';
 import { avisarNoticias, enviarAvisos } from '../_shared/avisos.ts';
 import { textoAlerta } from '../_shared/mensajes.ts';
 
 Deno.serve(async () => {
-  const r = { escalados: 0, avisos: 0, noticias: 0 };
+  const r = { escalados: 0, avisos: 0, noticias: 0, voluntarios: 0 };
   try {
     const { data, error } = await db.rpc('escalar_pendientes');
     if (error) throw error;
@@ -28,5 +28,17 @@ Deno.serve(async () => {
   } catch (e) { console.error('escalamiento', e); }
   try { r.avisos = await enviarAvisos(); } catch (e) { console.error('avisos', e); }
   try { r.noticias = await avisarNoticias(); } catch (e) { console.error('noticias', e); }
+  // Solicitudes de voluntariado: aviso breve al grupo de comunicación (sin teléfono ni correo).
+  try {
+    const { data } = await db.rpc('voluntarios_por_avisar');
+    const chat = (data ?? []).length ? (await chatDe('comunicacion')) ?? (await chatDe('alertas')) : null;
+    for (const v of (data ?? []) as { id: string; nombre: string; edad: number; disponibilidad: string[] }[]) {
+      const ini = v.nombre.trim().split(/\s+/); const corto = ini[0] + (ini[1] ? ` ${ini[1][0]}.` : '');
+      if (chat) await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML', disable_web_page_preview: true,
+        text: `<b>Nueva solicitud de voluntariado</b>\n${corto.replace(/[<>&]/g, '')} · ${v.edad} años${v.disponibilidad?.length ? ` · ${v.disponibilidad.join(', ')}` : ''}\nDatos de contacto en el panel: ${PANEL_URL}#voluntarios` });
+      await db.from('voluntarios').update({ avisado_en: new Date().toISOString() }).eq('id', v.id);
+      r.voluntarios++;
+    }
+  } catch (e) { console.error('voluntarios', e); }
   return Response.json(r);
 });

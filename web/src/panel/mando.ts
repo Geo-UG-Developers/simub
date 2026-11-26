@@ -6,9 +6,15 @@ import { FORMULARIOS } from '../formularios';
 import { CORPORACIONES, MEDIOS, MESES_TXT, leerHistorico, type Clase } from './catalogo';
 import { descargar, escribirExcel, leerExcel, type Celda } from './excel';
 import { entregarPdf, servicioPdf } from './pdf';
+import { clima, detalleClima, pastillaClima } from './clima';
+import { inicioSesion } from './control';
 import {
-  anularServicio, bitacora, cerrarServicio, conteos, estadoUnidad, guardarServicio, importarServicios, mando, reabrirServicio,
-  servicio, servicioDesdeReporte, servicios, tabla, type Mando, type Rol, type Servicio, type ServicioLista, type Unidad,
+  CODIGOS_PERSONA, COLORES, ESPECIFICACIONES, TIPOS_VEHICULO, activarAgregables, activarArea, activarMulti, area, datalist, filasAgregables, huella,
+  lienzoFirma, multi, persona, valoresMulti,
+} from './selectores';
+import {
+  anularServicio, bitacora, cerrarServicio, conteos, desbloquear, estadoUnidad, firmar, guardarServicio, importarServicios, mando, reabrirServicio,
+  registrarImportacion, servicio, servicioDesdeReporte, servicios, tabla, type Mando, type Rol, type Servicio, type ServicioLista, type Unidad, type Yo,
 } from './datos';
 
 export interface Ctx {
@@ -18,6 +24,8 @@ export interface Ctx {
   ciclo: (fn: () => void, ms: number) => void;
   nuevoMapa: (id: string) => L.Map;
   errores: Record<string, string>;
+  yo: () => Yo;
+  turno: () => void;
 }
 
 const BASE = import.meta.env.BASE_URL;
@@ -73,7 +81,11 @@ export async function vistaMando(c: Ctx) {
      <section class="tarjeta"><div class="fila-tit"><h3>Unidades</h3><span class="tenue chica">Toca una unidad para cambiar su estado.</span></div><div id="m-unidades" class="unidades"></div></section>
      <div class="fila-tit"><h3 id="m-tit">Servicios activos</h3><span class="tenue chica" id="m-act"></span></div>
      <div id="m-servicios" class="m-rejilla"><p class="tenue">Cargando…</p></div>`,
-    `<a class="btn" href="#guardia">${I.campana(16)} Tablero de guardia</a><button class="btn primario" id="m-nuevo">${I.mas(16)} Nuevo servicio</button>`);
+    `<span id="m-clima"></span><button class="btn" id="m-turno">Cambio de turno</button><a class="btn" href="#guardia">${I.campana(16)} Tablero</a><a class="btn primario" href="#captura">${I.mas(16)} Reporte 911 / externo</a>`);
+  $('m-turno').addEventListener('click', () => c.turno());
+  const pintarClima = async () => { const k = await clima(); const e = document.getElementById('m-clima'); if (e) e.innerHTML = pastillaClima(k); };
+  pintarClima(); c.ciclo(pintarClima, 15 * 60000);
+  document.querySelector('.cabecera p.tenue')!.insertAdjacentHTML('afterend', `<p class="en-turno">En turno: <b>${esc(c.yo().nombre)}</b>${c.yo().cargo ? ` · ${esc(c.yo().cargo)}` : ''}${inicioSesion() ? ` · desde ${hora(inicioSesion())}` : ''}</p>`);
   await catalogo().catch(() => c.aviso('No se pudo cargar el catálogo de servicios.', true));
   let m: Mando | null = null;
   const pintar = () => {
@@ -93,8 +105,8 @@ export async function vistaMando(c: Ctx) {
       const sig = HITOS.find(([k]) => !s[k]);
       return `<article class="m-card" style="--c:${cl.color}">
         <header><span class="m-folio">#${s.folio}</span>${pildora(s.clasificacion, s.falsa_alarma)}<span class="m-min ${min >= 60 ? 'largo' : ''}">${dur(min)}</span></header>
-        <p class="m-lugar">${I.pin(14)} ${esc(s.lugar ?? 'Sin lugar')}${s.especificacion ? ` · <span class="tenue">${esc(s.especificacion)}</span>` : ''}</p>
-        <p class="tenue chica">${esc(s.medio ?? '')}${s.reportante ? ` · ${esc(s.reportante)}` : ''} · reporte ${hora(s.h_reporte)}</p>
+        <p class="m-lugar">${I.pin(14)} ${esc([s.colonia, s.lugar].filter(Boolean).join(', ') || 'Sin lugar')}${s.especificacion ? ` · <span class="tenue">${esc(s.especificacion)}</span>` : ''}</p>
+        <p class="tenue chica">${esc(s.medio ?? '')}${s.datos?.folio_911 ? ` ${esc(s.datos.folio_911)}` : ''}${s.reportante ? ` · ${esc(s.reportante)}` : ''} · reporte ${hora(s.h_reporte)} · capturó ${esc(s.capturo ?? '')}</p>
         <div class="m-unid">${s.unidades.map((u) => `<span class="u-chip">${esc(u)}</span>`).join('') || '<span class="alerta-txt chica">Sin unidad asignada</span>'}
           ${Object.keys(s.apoyos ?? {}).length ? `<span class="tenue chica">Apoyo: ${esc(Object.keys(s.apoyos).join(', '))}</span>` : ''}</div>
         <ol class="m-cron">${HITOS.map(([k, , t]) => `<li class="${s[k] ? 'ok' : ''}"><span>${t}</span><b>${hora(s[k] as string | null) || '—'}</b></li>`).join('')}</ol>
@@ -107,8 +119,9 @@ export async function vistaMando(c: Ctx) {
   const cargar = async () => { try { m = await mando(); pintar(); } catch { $('m-act').innerHTML = '<span class="alerta-txt">Sin conexión con el servidor</span>'; } };
   // El escuchador vive en el marco de esta vista: al cambiar de sección se descarta junto con él.
   c.raiz.querySelector('.marco')!.addEventListener('click', async (e) => {
-    const b = (e.target as HTMLElement).closest('button'); if (!b || !m) return;
-    if (b.id === 'm-nuevo') return nuevoServicio(c, m, cargar);
+    const b = (e.target as HTMLElement).closest('button'); if (!b) return;
+    if (b.dataset.clima !== undefined) { const k = await clima(); cajon(`${cabCajon('Tiempo y riesgo de incendio', 'Guanajuato capital')}${detalleClima(k)}`, 'Clima'); return; }
+    if (!m) return;
     if (b.dataset.u) return menuUnidad(c, m.unidades.find((u) => u.id === Number(b.dataset.u))!, cargar);
     if (b.dataset.nota) return notaServicio(c, b.dataset.nota, cargar);
     try {
@@ -122,36 +135,6 @@ export async function vistaMando(c: Ctx) {
     cargar();
   });
   await cargar(); c.ciclo(cargar, 15000);
-}
-
-function nuevoServicio(c: Ctx, m: Mando, listo: () => void) {
-  const ahora = new Date().toISOString();
-  const { fondo, cerrar } = cajon(`${cabCajon('Nuevo servicio', 'Se le asigna el siguiente folio del año')}
-    <form id="f-nuevo" class="bloque">
-      <label>Tipo de servicio<select name="clasificacion" required>${opcionesClase()}</select></label>
-      <label>Especificación <small>(ej. casa habitación, cilindro 30 kg, enjambre de abejas)</small><input name="especificacion" maxlength="200"></label>
-      <label>Lugar<input name="lugar" required maxlength="300" placeholder="Colonia, calle, referencia"></label>
-      <div class="rejilla-2"><label>Medio<select name="medio">${MEDIOS.map((x) => `<option>${x}</option>`).join('')}</select></label>
-        <label>Hora del reporte<input type="datetime-local" name="h_reporte" value="${localInput(ahora)}"></label></div>
-      <div class="rejilla-2"><label>Reportante<input name="reportante" maxlength="120"></label><label>Teléfono<input name="telefono" inputmode="tel" maxlength="20"></label></div>
-      <fieldset class="unid-sel"><legend>Unidades que salen</legend>${m.unidades.map((u) => `<label class="chip-p ${EST_U[u.estado].cls}">
-        <input type="checkbox" name="unidades" value="${esc(u.nombre)}" ${u.estado !== 'disponible' ? 'disabled' : ''}>${esc(u.nombre)}
-        ${u.estado !== 'disponible' ? `<small>${u.estado === 'en_servicio' ? `folio ${u.folio}` : 'fuera'}</small>` : ''}</label>`).join('')}</fieldset>
-      <label class="fila-check"><span>Registrar el despacho ahora</span><input type="checkbox" name="despachar" checked></label>
-      <label class="fila-check"><span>Falsa alarma</span><input type="checkbox" name="falsa_alarma"></label>
-      <button class="btn primario" type="submit">Abrir servicio</button></form>`, 'Nuevo servicio');
-  fondo.querySelector('form')!.addEventListener('submit', async (e) => {
-    e.preventDefault(); const fd = new FormData(e.target as HTMLFormElement);
-    const btn = fondo.querySelector<HTMLButtonElement>('button[type=submit]')!; btn.disabled = true;
-    const p = { clasificacion: fd.get('clasificacion'), especificacion: fd.get('especificacion'), lugar: fd.get('lugar'), medio: fd.get('medio'),
-      reportante: fd.get('reportante'), telefono: fd.get('telefono'), h_reporte: desdeLocal(String(fd.get('h_reporte') ?? '')),
-      unidades: fd.getAll('unidades'), falsa_alarma: fd.get('falsa_alarma') === 'on' };
-    try {
-      const r = await guardarServicio(null, p);
-      if (fd.get('despachar') === 'on') await bitacora(r.id, null, 'despacho');
-      c.aviso(`Servicio abierto con folio ${folioTxt(r)}.`); cerrar(); listo();
-    } catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo abrir el servicio.', true); btn.disabled = false; }
-  });
 }
 
 function notaServicio(c: Ctx, id: string, listo: () => void) {
@@ -183,10 +166,9 @@ export async function vistaServicios(c: Ctx) {
     `<div class="filtros"><input id="buscar" type="search" placeholder="Buscar folio, lugar, unidad…"><select id="f-cls"><option value="">Todos los tipos</option></select></div>
      <section class="tarjeta"><div class="tabla-caja"><table class="tabla t-serv"><thead><tr><th>Folio</th><th>Fecha</th><th>Servicio</th><th>Especificación</th><th>Lugar</th><th>Área</th><th>Unidades</th><th>Pers.</th><th>Salida</th><th>Regreso</th><th>Total</th><th></th></tr></thead>
      <tbody id="t-serv"><tr><td colspan="12" class="tenue">Cargando…</td></tr></tbody></table></div></section>`,
-    `<label class="mes">Mes <input type="month" id="mes" value="${mesLista}"></label>${puedeExportar(c) ? '<button class="btn" id="xls">Descargar Excel</button>' : ''}<button class="btn primario" id="nuevo">${I.mas(16)} Capturar servicio</button>`);
+    `<label class="mes">Mes <input type="month" id="mes" value="${mesLista}"></label>${puedeExportar(c) ? '<button class="btn" id="xls">Descargar Excel</button>' : ''}<a class="btn primario" href="#captura">${I.mas(16)} Capturar servicio</a>`);
   await catalogo();
   $<HTMLInputElement>('mes').addEventListener('change', (e) => { mesLista = (e.target as HTMLInputElement).value; vistaServicios(c); });
-  $('nuevo').addEventListener('click', async () => { try { nuevoServicio(c, await mando(), () => vistaServicios(c)); } catch { c.aviso('Sin conexión.', true); } });
   const [a, m] = mesLista.split('-').map(Number);
   let xs: ServicioLista[] = [];
   try { xs = await servicios(new Date(a, m - 1, 1), new Date(a, m, 1)); } catch { c.aviso('No se pudieron cargar los servicios.', true); }
@@ -194,13 +176,13 @@ export async function vistaServicios(c: Ctx) {
   $('f-cls').innerHTML += usados.map((k) => `<option value="${k}">${esc(clase(k).nombre)}</option>`).join('');
   const pintar = () => {
     const q = $<HTMLInputElement>('buscar').value.trim().toLowerCase(), fc = $<HTMLSelectElement>('f-cls').value;
-    const vis = xs.filter((s) => (!fc || claveCuenta(s) === fc) && (!q || [s.folio, s.lugar, s.especificacion, s.unidades.join(' '), clase(s.clasificacion).nombre].join(' ').toLowerCase().includes(q)));
+    const vis = xs.filter((s) => (!fc || claveCuenta(s) === fc) && (!q || [s.folio, s.colonia, s.lugar, s.especificacion, s.unidades.join(' '), clase(s.clasificacion).nombre].join(' ').toLowerCase().includes(q)));
     $('t-serv').innerHTML = vis.map((s) => {
       const tot = s.h_despacho && s.h_base ? Math.round((+new Date(s.h_base) - +new Date(s.h_despacho)) / 60000) : null;
       return `<tr class="${s.estado}"><td class="nw"><b>${s.folio}</b></td><td class="nw">${fechaCorta(s.fecha)}</td><td>${pildora(s.clasificacion, s.falsa_alarma)}</td>
-        <td>${esc(s.especificacion ?? '')}</td><td>${esc(s.lugar ?? '')}</td><td class="nw">${esc(s.area_afectada ?? '')}</td><td class="nw">${esc(s.unidades.join(' / '))}</td>
+        <td>${esc(s.especificacion ?? '')}</td><td>${esc([s.colonia, s.lugar].filter(Boolean).join(', '))}</td><td class="nw">${esc(s.area_afectada ?? '')}</td><td class="nw">${esc(s.unidades.join(' / '))}</td>
         <td>${s.personal_num ?? ''}</td><td class="nw">${hora(s.h_despacho)}</td><td class="nw">${hora(s.h_base)}</td><td class="nw">${tot != null && tot >= 0 ? dur(tot) : ''}</td>
-        <td class="nw">${s.estado === 'activo' ? '<em class="pill p-ambar">Activo</em>' : s.estado === 'anulado' ? '<em class="pill p-gris">Anulado</em>' : ''}<a class="btn chico" href="#servicio/${s.id}">Abrir</a></td></tr>`;
+        <td class="nw">${s.estado === 'activo' ? '<em class="pill p-ambar">Activo</em>' : s.estado === 'anulado' ? '<em class="pill p-gris">Anulado</em>' : s.firmado ? '<em class="pill p-dorado">Firmado</em>' : ''}<a class="btn chico" href="#servicio/${s.id}">Abrir</a></td></tr>`;
     }).join('') || '<tr><td colspan="12" class="tenue">Sin servicios en este mes.</td></tr>';
   };
   $('buscar').addEventListener('input', pintar); $('f-cls').addEventListener('change', pintar); pintar();
@@ -217,7 +199,7 @@ const tiempo = (desde?: string | null, hasta?: string | null) => {
 function hojaServicios(nombre: string, xs: ServicioLista[]) {
   const filas: Celda[][] = [['FOLIO', 'FECHA', 'SERVICIO', 'TIPO DE SERVICIO (ESPECIFICACIÓN)', 'LUGAR', 'AREA AFECTADA M2', 'EQUIPO UTILIZADO', 'PERSONAL', 'TIEMPO', 'TIEMPO2', 'TOTAL DE TIEMPO', 'APOYOS']];
   for (const s of xs) filas.push([s.folio, new Date(`${s.fecha}T12:00:00`).toLocaleDateString('es-MX'), s.falsa_alarma ? 'FALSA ALARMA' : clase(s.clasificacion).nombre,
-    s.falsa_alarma ? `${clase(s.clasificacion).nombre}${s.especificacion ? ` · ${s.especificacion}` : ''}` : s.especificacion ?? '', s.lugar ?? '', s.area_afectada ?? 'N/A',
+    s.falsa_alarma ? `${clase(s.clasificacion).nombre}${s.especificacion ? ` · ${s.especificacion}` : ''}` : s.especificacion ?? '', [s.colonia, s.lugar].filter(Boolean).join(', '), s.area_afectada ?? 'N/A',
     s.unidades.join(' / '), s.personal_num, hora(s.h_despacho), hora(s.h_base), tiempo(s.h_despacho, s.h_base), Object.keys(s.apoyos ?? {}).join(', ')]);
   return { nombre, filas, anchos: [8, 12, 26, 32, 40, 14, 16, 9, 8, 8, 10, 24] };
 }
@@ -233,103 +215,252 @@ function hojaGrafica(nombre: string, n: Record<string, number>) {
   return { nombre, filas, anchos: [34, 10] };
 }
 
-// ================================================================ PARTE DE SERVICIO (formato SIMUB)
+// ================================================================ REPORTE 911 / EXTERNO (captura rápida)
+const ORIGENES = ['911', 'Radio', 'Teléfono de cabina', 'WhatsApp', 'Presencial', 'Otra corporación'];
+let ORIGEN_ULT = '911';
+async function listas() {
+  const [uds, per, col] = await Promise.all([
+    tabla<{ nombre: string; activa: boolean; tipo: string | null }>('unidades', 'nombre').catch(() => []),
+    tabla<{ nombre: string; cargo: string | null; activo: boolean }>('personal', 'nombre').catch(() => []),
+    tabla<{ nombre: string; tipo: string | null; activa: boolean }>('colonias', 'nombre').catch(() => [])]);
+  return { unidades: uds.filter((u) => u.activa).map((u) => u.nombre), personal: per.filter((p) => p.activo).map((p) => p.nombre),
+    colonias: col.filter((x) => x.activa).map((x) => x.nombre) };
+}
+
+export async function vistaCaptura(c: Ctx) {
+  c.marco('captura', 'Reporte 911 o externo', 'Para servicios que llegan por 911, radio, teléfono o en persona. Toca en vez de escribir: se registra con el siguiente folio del año.',
+    '<div id="cap"><p class="tenue">Cargando…</p></div>', `<a class="btn" href="#mando">Centro de mando</a>`);
+  await catalogo();
+  const [L2, m] = await Promise.all([listas(), mando().catch(() => null)]);
+  const ocupadas = new Map((m?.unidades ?? []).filter((u) => u.estado !== 'disponible').map((u) => [u.nombre, u.estado === 'en_servicio' ? `folio ${u.folio}` : 'fuera']));
+  const grupos = [...new Set(CAT.filter((x) => x.id !== 'falsa' && x.activo).map((x) => x.grupo))];
+  $('cap').innerHTML = `<form id="f-cap" class="captura" autocomplete="off">
+    <section class="bloque"><h3>1. ¿Quién lo reporta?</h3>
+      <div class="chips-sel" data-radio="medio">${ORIGENES.map((o) => `<button type="button" class="mchip ${o === ORIGEN_ULT ? 'on' : ''}" data-v="${o}">${o}</button>`).join('')}</div>
+      <input type="hidden" name="medio" value="${ORIGEN_ULT}">
+      <div class="rejilla-3"><label id="c-f911">Folio 911<input name="folio_911" inputmode="numeric" placeholder="Si lo dieron"></label>
+        <label id="c-corp" hidden>Corporación que lo pasó<select name="corp">${CORPORACIONES.map((x) => `<option>${x}</option>`).join('')}</select></label>
+        <label>Hora en que llegó<input type="datetime-local" name="h_reporte" value="${localInput(new Date().toISOString())}"></label></div></section>
+    <section class="bloque"><h3>2. ¿Qué pasa?</h3>
+      ${grupos.map((g) => `<div class="tipos-g"><span>${esc(g)}</span><div>${CAT.filter((x) => x.grupo === g && x.id !== 'falsa' && x.activo)
+        .map((x) => `<button type="button" class="tipo-b" data-cls="${x.id}" style="--c:${x.color}">${esc(x.nombre.replace(/^(INCENDIO|ACCIDENTE|RESCATE|PACIENTE|CAÍDA) (DE )?/, ''))}</button>`).join('')}</div></div>`).join('')}
+      <input type="hidden" name="clasificacion" required>
+      <div id="c-esp" class="chips-sel" data-radio="especificacion"></div>
+      <div class="rejilla-2"><label>Detalle <small>(opcional; toca una sugerencia o escribe)</small><input name="especificacion" maxlength="200"></label>
+      <label class="fila-check"><span>Falsa alarma</span><input type="checkbox" name="falsa_alarma"></label></div></section>
+    <section class="bloque"><h3>3. ¿Dónde?</h3><div class="rejilla-2">
+      <label>Colonia o comunidad<input name="colonia" list="l-col" placeholder="Empieza a escribir…" required></label>
+      <label>Calle, número o referencia<input name="lugar" maxlength="300" placeholder="Ej. Calle Pino 12, frente a la tienda"></label></div>
+      ${datalist('l-col', L2.colonias)}
+      <div class="rejilla-2"><label>Quién reporta <small>(opcional)</small><input name="reportante" maxlength="120"></label>
+      <label>Teléfono <small>(opcional)</small><input name="telefono" inputmode="tel" maxlength="20"></label></div></section>
+    <section class="bloque"><h3>4. Unidades</h3>
+      <div class="multi" data-multi="unidades"><input type="hidden" name="unidades" value="">
+        <div class="multi-chips">${L2.unidades.map((u) => `<button type="button" class="mchip ${ocupadas.has(u) ? 'ocupada' : ''}" data-v="${esc(u)}" ${ocupadas.get(u) === 'fuera' ? 'disabled' : ''}>${esc(u)}${ocupadas.has(u) ? ` <small>${esc(ocupadas.get(u))}</small>` : ''}</button>`).join('')}</div></div>
+      <div class="chips-sel" data-radio="modo"><button type="button" class="mchip on" data-v="ahora">Sale ahora (despacho)</button><button type="button" class="mchip" data-v="pendiente">Solo registrar</button>
+        <button type="button" class="mchip" data-v="concluido">Ya se atendió (captura posterior)</button></div><input type="hidden" name="modo" value="ahora">
+      <div class="rejilla-3" id="c-horas" hidden><label>Salida<input type="datetime-local" name="h_despacho"></label><label>Llegada a la escena<input type="datetime-local" name="h_llegada"></label><label>Regreso a base<input type="datetime-local" name="h_base"></label></div>
+</section>
+    <div class="cap-pie"><button class="btn primario grande" type="submit">Registrar y dar folio</button><span class="tenue chica">Captura: <b>${esc(c.yo().nombre)}</b></span></div>
+  </form><div id="cap-ok"></div>`;
+  const form = $<HTMLFormElement>('f-cap');
+  activarMulti(form);
+  const set = (n: string, v: string) => { (form.elements.namedItem(n) as HTMLInputElement).value = v; };
+  form.querySelectorAll<HTMLElement>('[data-radio]').forEach((g) => g.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLButtonElement>('.mchip'); if (!b) return;
+    g.querySelectorAll('.mchip').forEach((x) => x.classList.toggle('on', x === b)); set(g.dataset.radio!, b.dataset.v!);
+    if (g.dataset.radio === 'medio') { ORIGEN_ULT = b.dataset.v!; $('c-f911').hidden = b.dataset.v !== '911'; $('c-corp').hidden = b.dataset.v !== 'Otra corporación'; }
+    if (g.dataset.radio === 'modo') $('c-horas').hidden = b.dataset.v !== 'concluido';
+  }));
+  form.querySelectorAll<HTMLButtonElement>('[data-cls]').forEach((b) => b.addEventListener('click', () => {
+    form.querySelectorAll('[data-cls]').forEach((x) => x.classList.toggle('on', x === b)); set('clasificacion', b.dataset.cls!);
+    const sug = ESPECIFICACIONES[b.dataset.cls!] ?? [];
+    $('c-esp').innerHTML = sug.map((x) => `<button type="button" class="mchip" data-v="${esc(x)}">${esc(x)}</button>`).join('');
+  }));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault(); const fd = new FormData(form); const g = (k: string) => String(fd.get(k) ?? '').trim();
+    if (!g('clasificacion')) return c.aviso('Toca qué tipo de servicio es.', true);
+    const modo = g('modo'), uds = valoresMulti(fd.get('unidades'));
+    if (modo === 'concluido' && !g('h_despacho')) return c.aviso('Escribe al menos la hora de salida.', true);
+    const btn = form.querySelector<HTMLButtonElement>('button[type=submit]')!; btn.disabled = true; btn.textContent = 'Registrando…';
+    const medio = g('medio') === 'Otra corporación' ? `Otra corporación (${g('corp')})` : g('medio');
+    try {
+      const r = await guardarServicio(null, {
+        clasificacion: g('clasificacion'), especificacion: g('especificacion'), colonia: g('colonia'), lugar: g('lugar'), medio,
+        reportante: g('reportante'), telefono: g('telefono'), h_reporte: desdeLocal(g('h_reporte')), unidades: modo === 'concluido' ? uds : uds,
+        falsa_alarma: fd.get('falsa_alarma') === 'on', datos: g('folio_911') ? { folio_911: g('folio_911') } : {},
+        apoyos: g('medio') === 'Otra corporación' ? { [g('corp')]: { unidades: '', encargado: '' } } : {},
+        h_despacho: desdeLocal(g('h_despacho')), h_llegada: desdeLocal(g('h_llegada')), h_base: desdeLocal(g('h_base')),
+        tripulacion: uds.map((u) => ({ unidad: u, maquinista: '', jefe: '', bomberos: '' })),
+      });
+      if (modo === 'ahora') await bitacora(r.id, null, 'despacho');
+      if (modo === 'concluido') await cerrarServicio(r.id);
+      form.hidden = true;
+      $('cap-ok').innerHTML = `<section class="tarjeta folio-ok">${I.check(44)}<span>Folio asignado</span><b>${folioTxt(r)}</b>
+        <p>${pildora(g('clasificacion'), fd.get('falsa_alarma') === 'on')} · ${esc(g('colonia'))}${uds.length ? ` · ${esc(uds.join(', '))}` : ''}</p>
+        <div class="fila-btn"><a class="btn primario" href="#servicio/${r.id}">Completar el parte</a><button class="btn" id="otro">Registrar otro</button><a class="btn" href="#mando">Centro de mando</a></div></section>`;
+      $('otro').addEventListener('click', () => vistaCaptura(c));
+    } catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo registrar.', true); btn.disabled = false; btn.textContent = 'Registrar y dar folio'; }
+  });
+  form.querySelector<HTMLInputElement>('[name=folio_911]')?.focus();
+}
+
+// ================================================================ PARTE DE SERVICIO (formato SIMUB, con listas y firma en pantalla)
+const FIRMAS: [string, string][] = [['jefe_servicio', 'Jefe de servicio'], ['radio_operador', 'Radio operador'], ['jefe_guardia', 'Jefe de guardia']];
 export async function vistaServicio(c: Ctx, id: string) {
-  c.marco('servicios', 'Parte de servicio', 'Formato de SIMUB. Se guarda en línea y se descarga en PDF para firmar.', '<div id="parte"><p class="tenue">Cargando…</p></div>',
+  c.marco('servicios', 'Parte de servicio', 'Formato de SIMUB. Toca las listas en vez de escribir. Se firma en la pantalla y se descarga en PDF.', '<div id="parte"><p class="tenue">Cargando…</p></div>',
     '<a class="btn" href="#mando">Centro de mando</a><a class="btn" href="#servicios">Servicios</a>');
-  let s: Servicio | null = null; let uds: { nombre: string; activa: boolean }[] = [];
-  try { [s, uds] = await Promise.all([servicio(id), tabla<{ nombre: string; activa: boolean }>('unidades', 'nombre'), catalogo()]) as [Servicio | null, typeof uds, Clase[]]; } catch { s = null; }
+  let s: Servicio | null = null; let L2: Awaited<ReturnType<typeof listas>>;
+  try { [s, L2] = await Promise.all([servicio(id), listas(), catalogo()]) as [Servicio | null, typeof L2, Clase[]]; } catch { s = null; L2 = { unidades: [], personal: [], colonias: [] }; }
   if (!s) { $('parte').innerHTML = '<p class="tenue">No se encontró el servicio.</p>'; return; }
   const S = s;
   const v = (x: unknown) => esc(x ?? '');
-  const admin = c.rol() === 'admin', coord = c.rol() !== 'guardia';
-  const trip = [...(S.tripulacion ?? [])]; while (trip.length < 3) trip.push({ unidad: S.unidades[trip.length] ?? '', maquinista: '', jefe: '', bomberos: '' });
-  const veh = [...(S.vehiculos ?? [])]; while (veh.length < 3) veh.push({});
-  const per = [...(S.personas ?? [])]; while (per.length < 5) per.push({ nombre: '', codigo: '', edad: '' });
-  const corps = [...CORPORACIONES.filter((x) => x !== 'Otros'), ...Object.keys(S.apoyos ?? {}).filter((k) => !CORPORACIONES.includes(k)), 'Otros'];
-  const bloqueado = S.estado === 'anulado';
+  const admin = c.rol() === 'admin', editable = S.puede_editar !== false;
+  const dis = editable ? '' : 'disabled';
+  const trip = S.tripulacion?.length ? [...S.tripulacion] : S.unidades.map((u) => ({ unidad: u, maquinista: '', jefe: '', bomberos: '' }));
+  if (!trip.length) trip.push({ unidad: '', maquinista: '', jefe: '', bomberos: '' });
+  const veh = S.vehiculos?.length ? [...S.vehiculos] : [{}];
+  const per = S.personas?.length ? [...S.personas] : [{ nombre: '', codigo: '', edad: '' }];
+  const corpsSel = Object.keys(S.apoyos ?? {});
+  const filaTrip = (i: number, t = trip[i] ?? { unidad: '', maquinista: '', jefe: '', bomberos: '' }) => `<tr data-trip="${i}">
+    <td><select name="t_unidad_${i}" ${dis}><option value="">—</option>${[...new Set([...L2.unidades, t.unidad].filter(Boolean))].map((u) => `<option ${u === t.unidad ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></td>
+    <td>${persona(`t_maquinista_${i}`, t.maquinista, 'l-per', dis)}</td><td>${persona(`t_jefe_${i}`, t.jefe, 'l-per', dis)}</td>
+    <td>${multi(`t_bomberos_${i}`, [], valoresMulti(t.bomberos), 'Nombre y Enter', !editable, L2.personal)}</td></tr>`;
+  const filaVeh = (i: number, x: Record<string, string> = veh[i] ?? {}) => `<tr data-veh="${i}">${([['placas', ''], ['color', 'l-color'], ['tipo', 'l-tveh'], ['modelo', ''], ['conductor', ''], ['propietario', '']] as const)
+    .map(([k, l]) => `<td><input name="v_${k}_${i}" value="${v(x[k])}" ${l ? `list="${l}"` : ''} placeholder="${k[0].toUpperCase() + k.slice(1)}" ${dis}></td>`).join('')}</tr>`;
+  const filaPer = (i: number, x = per[i] ?? { nombre: '', codigo: '', edad: '' }) => `<tr data-per="${i}"><td><input name="p_nombre_${i}" value="${v(x.nombre)}" placeholder="Nombre" ${dis}></td>
+    <td><input name="p_codigo_${i}" value="${v(x.codigo)}" list="l-cod" placeholder="Código" ${dis}></td><td><input name="p_edad_${i}" value="${v(x.edad)}" inputmode="numeric" placeholder="Edad" class="corto" ${dis}></td></tr>`;
+  const filasCorp = (sel: string[], prev: Record<string, { unidades?: string; encargado?: string }>) => sel.map((k, i) => `<tr><th>${esc(k)}<input type="hidden" name="a_k_${i}" value="${esc(k)}"></th>
+    <td><input name="a_u_${i}" value="${v(prev[k]?.unidades)}" placeholder="Unidad(es)" ${dis}></td><td><input name="a_e_${i}" value="${v(prev[k]?.encargado)}" placeholder="Encargado(s)" ${dis}></td></tr>`).join('');
+  const firmaCaja = (k: string, t: string) => { const f = S.firmas?.[k]; const nombre = (S as unknown as Record<string, string | null>)[k] ?? f?.nombre ?? '';
+    return `<div class="firma-caja"><span class="etq">${t}</span>${persona(`f_${k}`, nombre, 'l-per', dis + ' placeholder="Nombre"')}
+      ${f?.imagen ? `<img src="${f.imagen}" alt="Firma de ${esc(f.nombre ?? t)}"><small class="tenue">Firmó ${new Date(f.en).toLocaleString('es-MX')} · registró ${esc(f.registro)}</small>` : '<div class="firma-vacia">Sin firma</div>'}
+      ${editable ? `<button type="button" class="btn chico" data-firmar="${k}">${f?.imagen ? 'Volver a firmar' : 'Firmar en pantalla'}</button>` : ''}</div>`; };
   $('parte').innerHTML = `
-  <form class="parte" id="f-parte">
+  ${!editable ? `<div class="aviso-candado">${S.bloqueado ? 'Parte <b>firmado</b> por el jefe de servicio: ya no se puede modificar.' : 'Este registro ya está cerrado: solo el Comandante o el responsable de la app pueden corregirlo.'}
+     ${admin && S.bloqueado ? '<button class="btn chico" id="desbloquear">Desbloquear para corregir</button>' : ''}</div>` : ''}
+  ${editable && S.bloqueado ? `<div class="aviso-candado">Parte firmado. Como administrador puedes corregirlo; el cambio queda en el control interno.</div>` : ''}
+  <form class="parte" id="f-parte" autocomplete="off"><fieldset class="sin-borde" ${dis}>
     <section class="bloque parte-cab2"><div><span class="etq">Folio</span><b class="folio-g">${folioTxt(S)}</b></div>
       <div>${pildora(S.clasificacion, S.falsa_alarma)} <em class="pill ${S.estado === 'activo' ? 'p-ambar' : S.estado === 'anulado' ? 'p-gris' : 'p-verde'}">${S.estado === 'activo' ? 'En curso' : S.estado === 'anulado' ? 'Anulado' : 'Concluido'}</em>
-      ${S.origen === 'historico' ? '<em class="pill p-gris">Importado del Excel</em>' : ''}${S.reporte_folio ? `<a class="pill p-dorado" href="#reportes/${S.reporte_id}">Reporte app ${esc(S.reporte_folio)}</a>` : ''}</div>
+      ${S.bloqueado ? '<em class="pill p-dorado">Firmado</em>' : ''}${S.origen === 'historico' ? '<em class="pill p-gris">Importado del Excel</em>' : ''}${S.reporte_folio ? `<a class="pill p-dorado" href="#reportes/${S.reporte_id}">Reporte app ${esc(S.reporte_folio)}</a>` : ''}
+      <br><small class="tenue">Capturó: <b>${esc(S.capturo ?? '—')}</b>${S.editado_por ? ` · última edición: ${esc(S.editado_por)}` : ''} · llenando ahora: <b>${esc(c.yo().nombre)}</b></small></div>
       <label>Fecha<input type="date" name="fecha" value="${v(S.fecha)}" required></label>
       <label class="fila-check"><span>Falsa alarma</span><input type="checkbox" name="falsa_alarma" ${S.falsa_alarma ? 'checked' : ''}></label></section>
     <section class="bloque"><h3>Cronología</h3><div class="rejilla-5">
       ${([['h_reporte', 'Reporte'], ['h_despacho', 'Despacho'], ['h_llegada', 'Llegada a la escena'], ['h_disponible', 'Unidad disponible'], ['h_base', 'Llegada a la base']] as const)
-        .map(([k, t]) => `<label>${t}<input type="datetime-local" name="${k}" value="${localInput(S[k])}"></label>`).join('')}</div>
+        .map(([k, t]) => `<label>${t}<span class="con-ahora"><input type="datetime-local" name="${k}" value="${localInput(S[k])}"><button type="button" class="btn chico" data-ahora="${k}" title="Poner la hora actual">Ahora</button></span></label>`).join('')}</div>
       <div class="rejilla-4"><label>Kilometraje salida<input type="number" step="0.1" min="0" name="km_salida" value="${v(S.km_salida)}"></label>
       <label>Kilometraje llegada<input type="number" step="0.1" min="0" name="km_llegada" value="${v(S.km_llegada)}"></label>
-      <label>Folio 911<input name="d_folio_911" value="${v(S.datos?.folio_911)}"></label><label>Personal total<input type="number" min="0" name="personal_num" value="${v(S.personal_num)}"></label></div></section>
-    <section class="bloque"><h3>Reporte</h3><div class="rejilla-3">
-      <label>Reportante<input name="reportante" value="${v(S.reportante)}"></label>
-      <label>Medio<input name="medio" list="medios" value="${v(S.medio)}"></label>
-      <label>Teléfono<input name="telefono" value="${v(S.telefono)}"></label></div>
-      <label>Lugar del incidente<input name="lugar" value="${v(S.lugar)}"></label>
-      ${S.lat != null ? `<p class="tenue chica">Ubicación de la app: <a href="https://www.google.com/maps/search/?api=1&query=${S.lat},${S.lon}" target="_blank" rel="noopener">${S.lat.toFixed(5)}, ${S.lon!.toFixed(5)}</a></p>` : ''}
-      <datalist id="medios">${MEDIOS.map((x) => `<option value="${x}">`).join('')}</datalist></section>
+      <label>Folio 911<input name="d_folio_911" value="${v(S.datos?.folio_911)}"></label><label>Personal total <small>(se calcula)</small><input type="number" min="0" name="personal_num" value="${v(S.personal_num)}"></label></div></section>
+    <section class="bloque"><h3>Reporte y lugar</h3><div class="rejilla-3">
+      <label>Medio<select name="medio">${[...new Set([...MEDIOS, S.medio].filter(Boolean))].map((x) => `<option ${x === S.medio ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
+      <label>Reportante<input name="reportante" value="${v(S.reportante)}"></label><label>Teléfono<input name="telefono" value="${v(S.telefono)}" inputmode="tel"></label></div>
+      <div class="rejilla-2"><label>Colonia o comunidad<input name="colonia" list="l-col" value="${v(S.colonia)}" placeholder="Empieza a escribir…"></label>
+      <label>Calle, número o referencia<input name="lugar" value="${v(S.lugar)}"></label></div>
+      ${S.lat != null ? `<p class="tenue chica">Ubicación de la app: <a href="https://www.google.com/maps/search/?api=1&query=${S.lat},${S.lon}" target="_blank" rel="noopener">${S.lat.toFixed(5)}, ${S.lon!.toFixed(5)}</a></p>` : ''}</section>
     <section class="bloque"><h3>Tipo de servicio</h3><div class="rejilla-3">
       <label>Servicio<select name="clasificacion" required>${opcionesClase(S.clasificacion)}</select></label>
-      <label>Especificación<input name="especificacion" value="${v(S.especificacion)}"></label>
-      <label>Área afectada<input name="area_afectada" value="${v(S.area_afectada)}" placeholder="Ej. 500 m2, 2 ha"></label></div>
-      <div class="rejilla-3"><label>Gas: compañía<input name="d_compania" value="${v(S.datos?.compania)}"></label><label>Gas: kilos<input name="d_kilos" value="${v(S.datos?.kilos)}"></label></div></section>
+      <label>Especificación<input name="especificacion" value="${v(S.especificacion)}" list="l-esp"></label>
+      <label>Área afectada${area('area_afectada', S.area_afectada, dis)}</label></div>
+      <div class="rejilla-3"><label>Gas: compañía<input name="d_compania" value="${v(S.datos?.compania)}"></label><label>Gas: kilos<input name="d_kilos" value="${v(S.datos?.kilos)}" inputmode="decimal"></label></div></section>
     <section class="bloque"><h3>Unidades y tripulación</h3>
-      <div class="tabla-caja"><table class="tabla t-form"><thead><tr><th>Unidad</th><th>Maquinista</th><th>Jefe de servicio</th><th>Bomberos</th></tr></thead><tbody>
-      ${trip.map((t, i) => `<tr><td><input name="t_unidad_${i}" list="l-uds" value="${v(t.unidad)}"></td><td><input name="t_maquinista_${i}" value="${v(t.maquinista)}"></td>
-        <td><input name="t_jefe_${i}" value="${v(t.jefe)}"></td><td><input name="t_bomberos_${i}" value="${v(t.bomberos)}" placeholder="Nombres separados por coma"></td></tr>`).join('')}</tbody></table></div>
-      <datalist id="l-uds">${uds.filter((u) => u.activa).map((u) => `<option value="${esc(u.nombre)}">`).join('')}</datalist></section>
-    <section class="bloque"><h3>Vehículos involucrados</h3><div class="tabla-caja"><table class="tabla t-form"><thead><tr><th></th>${veh.map((_, i) => `<th>Vehículo ${i + 1}</th>`).join('')}</tr></thead><tbody>
-      ${([['placas', 'Placas'], ['color', 'Color'], ['tipo', 'Tipo'], ['modelo', 'Modelo'], ['conductor', 'Nombre del conductor'], ['propietario', 'Propietario / Razón social']] as const)
-        .map(([k, t]) => `<tr><th>${t}</th>${veh.map((x, i) => `<td><input name="v_${k}_${i}" value="${v(x[k])}"></td>`).join('')}</tr>`).join('')}</tbody></table></div></section>
-    <section class="bloque"><h3>Corporaciones presentes</h3><p class="tenue chica">Sirve para el conteo anual de servicios atendidos junto con otras dependencias.</p>
-      <div class="tabla-caja"><table class="tabla t-form"><thead><tr><th>Corporación</th><th>Unidad(es)</th><th>Encargado(s)</th></tr></thead><tbody>
-      ${corps.map((k, i) => `<tr><th><label class="fila-check2"><input type="checkbox" name="a_on_${i}" ${S.apoyos?.[k] ? 'checked' : ''}> ${esc(k)}</label><input type="hidden" name="a_k_${i}" value="${esc(k)}"></th>
-        <td><input name="a_u_${i}" value="${v(S.apoyos?.[k]?.unidades)}"></td><td><input name="a_e_${i}" value="${v(S.apoyos?.[k]?.encargado)}"></td></tr>`).join('')}</tbody></table></div></section>
-    <section class="bloque"><h3>Personas localizadas en la escena</h3><div class="tabla-caja"><table class="tabla t-form"><thead><tr><th>Nombre</th><th>Código</th><th>Edad</th></tr></thead><tbody>
-      ${per.map((p, i) => `<tr><td><input name="p_nombre_${i}" value="${v(p.nombre)}"></td><td><input name="p_codigo_${i}" value="${v(p.codigo)}"></td><td><input name="p_edad_${i}" value="${v(p.edad)}" inputmode="numeric"></td></tr>`).join('')}</tbody></table></div></section>
+      <div class="tabla-caja"><table class="tabla t-form" id="t-trip"><thead><tr><th>Unidad</th><th>Maquinista</th><th>Jefe de servicio</th><th>Bomberos</th></tr></thead>
+      <tbody>${trip.map((_, i) => filaTrip(i)).join('')}</tbody></table></div>
+      ${editable ? '<button type="button" class="btn chico" data-agregar="t-trip">+ Agregar unidad</button>' : ''}
+      ${!L2.personal.length ? '<p class="tenue chica">Para elegir nombres de una lista, el administrador agrega al personal en Ajustes.</p>' : ''}</section>
+    <section class="bloque"><h3>Vehículos involucrados</h3>
+      ${filasAgregables('t-veh', veh.length, (i) => filaVeh(i), 'Agregar vehículo', !editable)}</section>
+    <section class="bloque"><h3>Corporaciones presentes</h3><p class="tenue chica">Toca las que acudieron. Sirve para el conteo anual con otras dependencias.</p>
+      ${multi('corps', CORPORACIONES, corpsSel, 'Otra corporación y Enter', !editable)}
+      <div class="tabla-caja"><table class="tabla t-form"><tbody id="t-corp">${filasCorp(corpsSel, S.apoyos ?? {})}</tbody></table></div></section>
+    <section class="bloque"><h3>Personas localizadas en la escena</h3>
+      ${filasAgregables('t-per', per.length, (i) => filaPer(i), 'Agregar persona', !editable)}</section>
     <section class="bloque"><h3>Observaciones</h3><textarea name="observaciones" rows="5">${v(S.observaciones)}</textarea></section>
-    <section class="bloque"><h3>Firmas</h3><div class="rejilla-3"><label>Jefe de servicio<input name="jefe_servicio" value="${v(S.jefe_servicio)}"></label>
-      <label>Radio operador<input name="radio_operador" value="${v(S.radio_operador)}"></label><label>Jefe de guardia<input name="jefe_guardia" value="${v(S.jefe_guardia)}"></label></div>
-      <p class="tenue chica">El parte se considera completo cuando tiene el nombre del jefe de servicio.</p></section>
+    <section class="bloque"><h3>Firmas</h3><div class="rejilla-3 firmas">${FIRMAS.map(([k, t]) => firmaCaja(k, t)).join('')}</div>
+      <p class="tenue chica">Se firma con el dedo (celular o tableta) o con el mouse. Al firmar el jefe de servicio, el parte queda cerrado y se guarda su huella digital (SHA-256) para comprobar que no cambió.</p></section>
+  </fieldset>
+    ${datalist('l-per', L2.personal)}${datalist('l-col', L2.colonias)}${datalist('l-esp', ESPECIFICACIONES[S.clasificacion] ?? [])}
+    ${datalist('l-cod', CODIGOS_PERSONA)}${datalist('l-tveh', TIPOS_VEHICULO)}${datalist('l-color', COLORES)}
     <div class="pie-parte">
-      ${bloqueado ? '' : '<button class="btn primario" type="submit">Guardar parte</button>'}
+      ${editable ? '<button class="btn primario" type="submit">Guardar parte</button>' : ''}
       <button class="btn" type="button" id="pdf">Descargar PDF</button>
       ${S.estado === 'activo' ? '<button class="btn" type="button" id="concluir">Concluir servicio</button>' : ''}
-      ${S.estado === 'cerrado' && coord ? '<button class="btn tenue-btn" type="button" id="reabrir">Reabrir</button>' : ''}
-      ${admin && !bloqueado ? '<button class="btn tenue-btn" type="button" id="anular">Anular folio</button>' : ''}
+      ${S.estado === 'cerrado' && admin ? '<button class="btn tenue-btn" type="button" id="reabrir">Reabrir</button>' : ''}
+      ${admin && S.estado !== 'anulado' ? '<button class="btn tenue-btn" type="button" id="anular">Anular folio</button>' : ''}
       <span class="tenue chica">Actualizado ${new Date(S.actualizado_en).toLocaleString('es-MX')}</span></div>
   </form>
   <section class="tarjeta"><h3>Bitácora</h3><ol class="hist">${(S.bitacora ?? []).map((b) => `<li><b>${new Date(b.en).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</b> · ${esc(b.texto)} <small class="tenue">${esc(b.autor ?? '')}</small></li>`).join('')}</ol>
-    ${bloqueado ? '' : '<form class="fila-btn" id="f-bit"><input name="t" maxlength="1000" placeholder="Agregar nota a la bitácora" required><button class="btn">Agregar</button></form>'}</section>`;
+    ${S.estado === 'anulado' ? '' : '<form class="fila-btn" id="f-bit"><input name="t" maxlength="1000" placeholder="Agregar nota a la bitácora" required><button class="btn">Agregar</button></form>'}</section>`;
   const form = $<HTMLFormElement>('f-parte');
+  activarMulti(form); activarArea(form);
+  const cuenta = (sel: string) => () => form.querySelectorAll(sel).length;
+  activarAgregables(form, { 't-veh': (i) => filaVeh(i, {}), 't-per': (i) => filaPer(i, { nombre: '', codigo: '', edad: '' }) }, { 't-veh': cuenta('[data-veh]'), 't-per': cuenta('[data-per]') });
+  form.querySelector('[data-agregar="t-trip"]')?.addEventListener('click', () => {
+    const i = form.querySelectorAll('[data-trip]').length; form.querySelector('#t-trip tbody')!.insertAdjacentHTML('beforeend', filaTrip(i, { unidad: '', maquinista: '', jefe: '', bomberos: '' })); activarMulti(form);
+  });
+  form.querySelectorAll<HTMLButtonElement>('[data-ahora]').forEach((b) => b.addEventListener('click', () => {
+    (form.elements.namedItem(b.dataset.ahora!) as HTMLInputElement).value = localInput(new Date().toISOString());
+  }));
+  (form.elements.namedItem('clasificacion') as HTMLSelectElement).addEventListener('change', (e) => {
+    const k = (e.target as HTMLSelectElement).value; $('l-esp').innerHTML = (ESPECIFICACIONES[k] ?? []).map((x) => `<option value="${esc(x)}">`).join('');
+  });
+  // corporaciones: al tocar una, aparece su fila (conserva lo ya escrito)
+  form.querySelector('input[name=corps]')?.addEventListener('change', () => {
+    const prev: Record<string, { unidades: string; encargado: string }> = {};
+    form.querySelectorAll<HTMLInputElement>('[name^=a_k_]').forEach((k) => { const i = k.name.slice(4); prev[k.value] = { unidades: (form.elements.namedItem(`a_u_${i}`) as HTMLInputElement).value, encargado: (form.elements.namedItem(`a_e_${i}`) as HTMLInputElement).value }; });
+    $('t-corp').innerHTML = filasCorp(valoresMulti((form.elements.namedItem('corps') as HTMLInputElement).value), { ...S.apoyos, ...prev });
+  });
+  // personal total: se calcula con los nombres de la tripulación si no lo escriben
   const recolectar = () => {
     const fd = new FormData(form); const g = (k: string) => String(fd.get(k) ?? '').trim();
-    const tripulacion = trip.map((_, i) => ({ unidad: g(`t_unidad_${i}`), maquinista: g(`t_maquinista_${i}`), jefe: g(`t_jefe_${i}`), bomberos: g(`t_bomberos_${i}`) }))
+    const nT = form.querySelectorAll('[data-trip]').length, nV = form.querySelectorAll('[data-veh]').length, nP = form.querySelectorAll('[data-per]').length;
+    const tripulacion = [...Array(nT)].map((_, i) => ({ unidad: g(`t_unidad_${i}`), maquinista: g(`t_maquinista_${i}`), jefe: g(`t_jefe_${i}`), bomberos: g(`t_bomberos_${i}`) }))
       .filter((t) => t.unidad || t.maquinista || t.jefe || t.bomberos);
-    const vehiculos = veh.map((_, i) => Object.fromEntries(['placas', 'color', 'tipo', 'modelo', 'conductor', 'propietario'].map((k) => [k, g(`v_${k}_${i}`)])))
+    const vehiculos = [...Array(nV)].map((_, i) => Object.fromEntries(['placas', 'color', 'tipo', 'modelo', 'conductor', 'propietario'].map((k) => [k, g(`v_${k}_${i}`)])))
       .filter((x) => Object.values(x).some(Boolean));
     const apoyos: Record<string, { unidades: string; encargado: string }> = {};
-    corps.forEach((_, i) => { const k = g(`a_k_${i}`), u = g(`a_u_${i}`), e = g(`a_e_${i}`); if (fd.get(`a_on_${i}`) === 'on' || u || e) apoyos[k] = { unidades: u, encargado: e }; });
-    const personas = per.map((_, i) => ({ nombre: g(`p_nombre_${i}`), codigo: g(`p_codigo_${i}`), edad: g(`p_edad_${i}`) })).filter((p) => p.nombre || p.codigo || p.edad);
+    valoresMulti(fd.get('corps')).forEach((k, i) => { apoyos[k] = { unidades: g(`a_u_${i}`), encargado: g(`a_e_${i}`) }; });
+    const personas = [...Array(nP)].map((_, i) => ({ nombre: g(`p_nombre_${i}`), codigo: g(`p_codigo_${i}`), edad: g(`p_edad_${i}`) })).filter((p) => p.nombre || p.codigo || p.edad);
     const deTrip = [...new Set(tripulacion.map((t) => t.unidad).filter(Boolean))];
-    const nombres = tripulacion.flatMap((t) => [t.maquinista, t.jefe, ...t.bomberos.split(',')]).map((x) => x.trim()).filter(Boolean);
+    const nombres = new Set(tripulacion.flatMap((t) => [t.maquinista, t.jefe, ...valoresMulti(t.bomberos)]).filter(Boolean));
     return {
       fecha: g('fecha'), falsa_alarma: fd.get('falsa_alarma') === 'on', clasificacion: g('clasificacion'), especificacion: g('especificacion'),
-      area_afectada: g('area_afectada'), lugar: g('lugar'), medio: g('medio'), reportante: g('reportante'), telefono: g('telefono'),
+      area_afectada: g('area_afectada'), colonia: g('colonia'), lugar: g('lugar'), medio: g('medio'), reportante: g('reportante'), telefono: g('telefono'),
       h_reporte: desdeLocal(g('h_reporte')), h_despacho: desdeLocal(g('h_despacho')), h_llegada: desdeLocal(g('h_llegada')),
       h_disponible: desdeLocal(g('h_disponible')), h_base: desdeLocal(g('h_base')), km_salida: g('km_salida'), km_llegada: g('km_llegada'),
-      personal_num: g('personal_num') || (nombres.length ? String(nombres.length) : ''), unidades: deTrip.length ? deTrip : S.unidades,
+      personal_num: g('personal_num') || (nombres.size ? String(nombres.size) : ''), unidades: deTrip.length ? deTrip : S.unidades,
       tripulacion, vehiculos, apoyos, personas, observaciones: g('observaciones'),
       datos: { ...S.datos, folio_911: g('d_folio_911'), compania: g('d_compania'), kilos: g('d_kilos') },
-      jefe_servicio: g('jefe_servicio'), radio_operador: g('radio_operador'), jefe_guardia: g('jefe_guardia'),
+      jefe_servicio: g('f_jefe_servicio'), radio_operador: g('f_radio_operador'), jefe_guardia: g('f_jefe_guardia'),
     };
   };
   const guardar = async () => {
-    if (bloqueado) return true;
+    if (!editable) return true;
     try { await guardarServicio(id, recolectar()); return true; }
     catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo guardar el parte.', true); return false; }
   };
   form.addEventListener('submit', async (e) => { e.preventDefault(); if (await guardar()) { c.aviso('Parte guardado.'); vistaServicio(c, id); } });
+  // firma en pantalla
+  form.querySelectorAll<HTMLButtonElement>('[data-firmar]').forEach((b) => b.addEventListener('click', async () => {
+    const k = b.dataset.firmar!, t = FIRMAS.find((x) => x[0] === k)![1];
+    const nombre = (form.elements.namedItem(`f_${k}`) as HTMLInputElement).value.trim();
+    if (!nombre) return c.aviso(`Escribe o elige el nombre del ${t.toLowerCase()} antes de firmar.`, true);
+    const { fondo, cerrar } = cajon(`${cabCajon(`Firma · ${t}`, esc(nombre))}
+      <p class="tenue">Firma dentro del recuadro con el dedo o el mouse.</p><canvas class="lienzo-firma" id="lienzo"></canvas>
+      ${k === 'jefe_servicio' ? '<p class="aviso-candado chico">Al firmar el jefe de servicio el parte queda <b>cerrado</b>. Revisa que todo esté completo.</p>' : ''}
+      <div class="fila-btn"><button class="btn" id="f-limpiar" type="button">Borrar</button><button class="btn primario" id="f-ok" type="button">Guardar firma</button></div>`, 'Firma');
+    const lz = lienzoFirma(fondo.querySelector<HTMLCanvasElement>('#lienzo')!);
+    fondo.querySelector('#f-limpiar')!.addEventListener('click', () => lz.limpiar());
+    fondo.querySelector('#f-ok')!.addEventListener('click', async () => {
+      if (lz.vacia()) return c.aviso('La firma está vacía.', true);
+      if (!(await guardar())) return;
+      try {
+        const h = k === 'jefe_servicio' ? await huella({ folio: folioTxt(S), ...recolectar() }) : null;
+        await firmar(id, k, nombre, lz.imagen(), h); cerrar(); c.aviso('Firma guardada.'); vistaServicio(c, id);
+      } catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo guardar la firma.', true); }
+    });
+  }));
   $('pdf').addEventListener('click', async () => {
     const b = $<HTMLButtonElement>('pdf'); b.disabled = true; b.textContent = 'Generando…';
     if (await guardar()) {
@@ -344,6 +475,10 @@ export async function vistaServicio(c: Ctx, id: string) {
   });
   document.getElementById('reabrir')?.addEventListener('click', async () => {
     try { await reabrirServicio(id); vistaServicio(c, id); } catch (e) { c.aviso(c.errores[(e as Error).message] ?? 'No se pudo reabrir.', true); }
+  });
+  document.getElementById('desbloquear')?.addEventListener('click', async () => {
+    const motivo = prompt('¿Por qué se corrige este parte firmado? (queda en el control interno)'); if (!motivo?.trim()) return;
+    try { await desbloquear(id, motivo); c.aviso('Parte desbloqueado. Al terminar, vuelve a firmar.'); vistaServicio(c, id); } catch (e) { c.aviso(c.errores[(e as Error).message] ?? 'No se pudo.', true); }
   });
   document.getElementById('anular')?.addEventListener('click', async () => {
     const motivo = prompt('Motivo para anular este folio (queda registrado en la bitácora):'); if (!motivo?.trim()) return;
@@ -458,6 +593,7 @@ export function activarImportar(c: Ctx) {
       try { const r = await importarServicios(filas.slice(i, i + 400)); ok += r.importados; omit += r.omitidos; }
       catch { c.aviso('Se interrumpió la importación. Vuelve a intentar: no se duplican.', true); btn.disabled = false; return; }
     }
+    registrarImportacion({ archivo: arch.files?.[0]?.name, importados: ok, omitidos: omit, hojas: lectura.hojas }).catch(() => {});
     res.innerHTML = `<p class="ok-txt">Listo: ${ok.toLocaleString('es-MX')} servicios importados o actualizados${omit ? `, ${omit} omitidos (ya capturados en la app con ese folio)` : ''}. Revisa el <a href="#anual">informe anual</a>.</p>`;
   });
 }

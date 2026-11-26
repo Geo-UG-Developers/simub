@@ -126,7 +126,7 @@ do $$ declare r jsonb; begin
   r := aplicar_conservacion();
   perform pg_temp.ok(jsonb_array_length(r->'fotos') = 1, 'devuelve fotos viejas');
   perform pg_temp.ok((select nombre is null and telefono is null and cardinality(fotos) = 0 from reportes where tipo = 'fauna'), 'anonimiza a los 12 meses');
-  insert into miembros_panel values ('66666666-6666-4666-8666-666666666666', 'admin', 'Admin') on conflict do nothing;
+  insert into miembros_panel (user_id, rol, nombre, superusuario) values ('66666666-6666-4666-8666-666666666666', 'admin', 'Admin', true) on conflict do nothing;
   perform pg_temp.como('44444444-4444-4444-8444-444444444444');
   begin perform limpiar_datos_prueba(); raise exception 'FALLÓ: guardia limpió datos';
   exception when others then perform pg_temp.ok(sqlerrm = 'sin_permiso', 'solo admin limpia: ' || sqlerrm); end;
@@ -177,6 +177,51 @@ do $$ declare a jsonb; b jsonb; r jsonb; m jsonb; c jsonb; uid_m4 int; begin
   perform pg_temp.ok((panel_servicio_desde_reporte((r->>'id')::uuid))->>'id' = a->>'id', 'no duplica servicio del reporte');
   r := limpiar_datos_prueba();
   perform pg_temp.ok((select count(*) from servicios) = 1 and (select origen from servicios) = 'historico', 'limpieza conserva histórico');
+end $$;
+
+-- 13. Permisos de cabina, firma con candado, sesiones/turnos, auditoría, respaldo y voluntariado
+do $$ declare a jsonb; s1 bigint; s2 bigint; c jsonb; r jsonb; begin
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');   -- cabina (guardia)
+  a := panel_guardar_servicio(null, '{"clasificacion":"fuga_gas","colonia":"Marfil","lugar":"Calle 1","medio":"911","datos":{"folio_911":"G-77"}}');
+  perform pg_temp.ok((select capturo from servicios where id = (a->>'id')::uuid) = 'Guardia', 'registra quién capturó');
+  perform pg_temp.ok((select texto from bitacora where servicio_id = (a->>'id')::uuid order by id limit 1) like '%folio 911 G-77%', 'bitácora con folio 911');
+  perform panel_firmar((a->>'id')::uuid, 'jefe_servicio', 'Ana López', 'data:image/png;base64,AAAA', 'abc');
+  perform pg_temp.ok((select bloqueado and jefe_servicio = 'Ana López' from servicios where id = (a->>'id')::uuid), 'firma del jefe bloquea');
+  begin perform panel_guardar_servicio((a->>'id')::uuid, '{"clasificacion":"fuga_gas"}'); raise exception 'FALLÓ: cabina editó un parte firmado';
+  exception when others then perform pg_temp.ok(sqlerrm = 'bloqueado', 'cabina no edita firmado: ' || sqlerrm); end;
+  begin perform panel_reabrir_servicio((a->>'id')::uuid); raise exception 'FALLÓ: cabina reabrió';
+  exception when others then perform pg_temp.ok(sqlerrm in ('solo_admin', 'transicion_invalida'), 'cabina no reabre: ' || sqlerrm); end;
+  -- (las tablas de ajustes las protege RLS en Supabase: solo admin las edita)
+  perform pg_temp.ok(exists (select 1 from pg_policies where tablename = 'unidades' and policyname = 'unidades_editar'), 'regla de edición de unidades');
+  begin perform panel_control(now() - interval '1 day', now() + interval '1 day'); raise exception 'FALLÓ: cabina vio control';
+  exception when others then perform pg_temp.ok(sqlerrm = 'sin_permiso', 'control solo admin'); end;
+  s1 := panel_sesion_iniciar('Cabina PC', null);
+  perform pg_temp.ok((panel_latido(s1))->>'activa' = 'true', 'latido');
+  perform panel_sesion_cerrar(s1, 'cambio_turno');
+  r := panel_respaldo(extract(year from now())::int);
+  perform pg_temp.ok(jsonb_array_length(r->'servicios') >= 1, 'respaldo con servicios');
+  perform pg_temp.como('66666666-6666-4666-8666-666666666666');   -- admin
+  s2 := panel_sesion_iniciar('Cabina PC', s1);
+  perform pg_temp.ok((select turno_de from sesiones where id = s2) = 'Guardia', 'cambio de turno anotado');
+  perform panel_guardar_servicio((a->>'id')::uuid, '{"clasificacion":"fuga_gas","colonia":"Marfil"}');
+  update unidades set tipo = 'Motobomba 2' where nombre = 'M-01';
+  c := panel_control(now() - interval '1 day', now() + interval '1 day');
+  perform pg_temp.ok(jsonb_array_length(c->'sesiones') = 2, 'sesiones listadas');
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(c->'auditoria') x where x->>'accion' = 'servicio_corregido'), 'corrección auditada');
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(c->'auditoria') x where x->>'accion' = 'update' and x->>'tabla' = 'unidades'), 'ajuste auditado');
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(c->'auditoria') x where x->>'accion' = 'cambio_turno'), 'turno auditado');
+  perform pg_temp.ok(jsonb_array_length((c->'sesiones'->1)->'folios') >= 1 or jsonb_array_length((c->'sesiones'->0)->'folios') >= 1, 'folios por sesión');
+  perform pg_temp.ok((panel_auditoria_borrar(array[(select min(id) from auditoria)]))->>'borradas' = '1', 'super borra auditoría');
+  update miembros_panel set superusuario = false where user_id = '66666666-6666-4666-8666-666666666666';
+  begin perform panel_auditoria_borrar(array[1::bigint]); raise exception 'FALLÓ: admin borró auditoría';
+  exception when others then perform pg_temp.ok(sqlerrm = 'sin_permiso', 'solo super borra auditoría'); end;
+  begin perform limpiar_datos_prueba(); raise exception 'FALLÓ: admin borró datos';
+  exception when others then perform pg_temp.ok(sqlerrm = 'sin_permiso', 'solo super prepara producción'); end;
+  perform pg_temp.como('11111111-1111-4111-8111-111111111111');
+  r := registrar_voluntario('{"nombre":"Juan Pérez","edad":20,"telefono":"4731234567","correo":"j@x.mx","disponibilidad":["fines"]}');
+  perform pg_temp.ok((select count(*) from voluntarios) = 1, 'voluntario registrado');
+  begin perform registrar_voluntario('{"nombre":"Niño","edad":16,"telefono":"4731234567"}'); raise exception 'FALLÓ: menor de edad';
+  exception when others then perform pg_temp.ok(sqlerrm like '%violates check%', 'mayor de 18'); end;
 end $$;
 
 \echo 'TODAS LAS PRUEBAS DE SIMUB PASARON'

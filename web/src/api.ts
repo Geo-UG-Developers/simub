@@ -155,3 +155,9 @@ export async function activarAvisos(): Promise<EstadoAvisos> {
   if (error) throw error;
   return 'activos';
 }
+
+export async function enviarVoluntario(p: Record<string, unknown>) {
+  await asegurarSesion();
+  const { error } = await db.rpc('registrar_voluntario', { p });
+  if (error) throw new Error(/limite_reportes/.test(error.message) ? 'limite_reportes' : error.message);
+}

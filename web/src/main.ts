@@ -5,7 +5,7 @@ import L from 'leaflet';
 import { I } from './iconos';
 import { FORMULARIOS, INMUEBLES, MOTIVOS_REVISION, ORDEN_TIPOS, resumen, type Tipo } from './formularios';
 import {
-  activarAvisos, agregarInfo, comprimir, enviarReporte, estadoAvisos, infoPublica, misReportes, misRevisiones,
+  activarAvisos, agregarInfo, comprimir, enviarReporte, enviarVoluntario, estadoAvisos, infoPublica, misReportes, misRevisiones,
   registrarServiceWorker, responderRevision, solicitarRevision, urlFotoNoticia,
   type Estado, type InfoPublica, type MiReporte, type MiRevision, type Noticia,
 } from './api';
@@ -458,6 +458,7 @@ function noticias() {
   app.innerHTML = `<div class="con-nav">${cabecera('Noticias', '#/inicio')}
   <main class="pantalla"><div class="chips filtro">${[['', 'Todas'], ...Object.entries(CAT)].map(([k, t]) =>
     `<button type="button" class="chip-op ${filtroNoticias === k ? 'on' : ''}" style="--c:var(--guinda);--t:#F1E3E4" data-cat="${k}">${t}</button>`).join('')}</div>
+  <a class="tarjeta-vol" href="#/voluntario">${I.mano(28)}<span><b>Súmate como voluntario</b><small>Requisitos y solicitud</small></span>${I.flecha(20)}</a>
   <div id="lista"><p class="tenue">Cargando…</p></div><div id="caja-avisos"></div></main></div>${nav('noticias')}`;
   app.querySelectorAll<HTMLButtonElement>('[data-cat]').forEach((b) => b.addEventListener('click', () => { filtroNoticias = b.dataset.cat!; noticias(); }));
   tarjetaAvisos('caja-avisos', 'Activa los avisos para enterarte de eventos, colectas y avisos importantes de SIMUB.');
@@ -493,24 +494,30 @@ function apoya() {
     const clabe = d?.clabe?.replace(/\s/g, '') ?? '';
     $('contenido').innerHTML = `
       <section class="hero-apoya"><img src="${BASE}escudo-192.png" alt=""><div><b>Somos voluntarios</b><p>Tu donativo mantiene las unidades, el equipo y la capacitación de quienes te atienden.</p></div></section>
-      <section class="tarjeta"><h2 class="sec">Donar en línea</h2>
-        <div class="montos">${(d?.montos ?? [100, 200, 500]).map((m) => `<a class="monto" ${d?.enlace_pago ? `href="${esc(d.enlace_pago)}" target="_blank" rel="noopener"` : 'aria-disabled="true"'}>$${m}</a>`).join('')}
-        <a class="monto" ${d?.enlace_pago ? `href="${esc(d.enlace_pago)}" target="_blank" rel="noopener"` : 'aria-disabled="true"'}>Otro</a></div>
-        ${d?.enlace_pago ? '<p class="tenue">Se abre la página segura del proveedor de pagos.</p>' : '<p class="tenue"><span class="pendiente">[Enlace de pago pendiente de SIMUB]</span></p>'}
-      </section>
-      <section class="tarjeta"><h2 class="sec">Transferencia</h2>
-        <dl class="datos-banco"><dt>Titular</dt><dd>${pendiente(d?.titular?.startsWith('[') ? '' : d?.titular, d?.titular ?? '[Titular]')}</dd>
-        <dt>Banco</dt><dd>${pendiente(d?.banco?.startsWith('[') ? '' : d?.banco, d?.banco ?? '[Banco]')}</dd>
-        <dt>CLABE</dt><dd class="clabe">${pendiente(clabe, d?.clabe_texto ?? '[CLABE]')}${clabe ? `<button type="button" class="copiar" id="copiar" aria-label="Copiar CLABE">${I.copiar(18)} Copiar</button>` : ''}</dd>
-        <dt>Concepto</dt><dd>${esc(d?.concepto ?? 'Donativo SIMUB')}</dd></dl>
-        <p class="tenue">${d?.recibo_deducible ? 'Emitimos recibo deducible de impuestos.' : 'Si necesitas comprobante, solicítalo:'} ${pendiente(d?.contacto_recibo?.startsWith('[') ? '' : d?.contacto_recibo, d?.contacto_recibo ?? '')}</p>
+      <section class="tarjeta"><h2 class="sec">Donar</h2><p class="tenue">1. Elige cuánto quieres donar.</p>
+        <div class="montos">${(d?.montos ?? [100, 200, 500]).map((m) => `<button type="button" class="monto" data-monto="${m}">$${m}</button>`).join('')}
+          <button type="button" class="monto" data-monto="otro">Otro</button></div>
+        <label class="campo" id="caja-otro" hidden><span>Monto en pesos</span><input id="monto-otro" type="number" inputmode="numeric" min="10" step="10" placeholder="Ej. 300"></label>
+        <div id="pasos-don" hidden>
+          <p class="tenue">2. Abre la app de tu banco, elige <b>Transferir</b> y copia cada dato con un toque:</p>
+          <dl class="datos-banco copiables">
+            <dt>Monto</dt><dd><b id="don-monto"></b><button type="button" class="copiar" data-copiar="monto">${I.copiar(16)} Copiar</button></dd>
+            <dt>CLABE</dt><dd class="clabe">${pendiente(clabe, d?.clabe_texto ?? '[CLABE]')}${clabe ? `<button type="button" class="copiar" data-copiar="clabe">${I.copiar(16)} Copiar</button>` : ''}</dd>
+            <dt>Beneficiario</dt><dd>${esc(d?.titular ?? '')}<button type="button" class="copiar" data-copiar="titular">${I.copiar(16)} Copiar</button></dd>
+            <dt>Banco</dt><dd>${esc(d?.banco ?? '')}</dd>
+            <dt>Concepto</dt><dd>${esc(d?.concepto ?? 'Donativo SIMUB')}<button type="button" class="copiar" data-copiar="concepto">${I.copiar(16)} Copiar</button></dd></dl>
+          <div class="fila-botones"><button type="button" class="boton claro" id="copiar-todo">${I.copiar(18)} Copiar todos los datos</button>
+            ${'share' in navigator ? `<button type="button" class="boton claro" id="compartir-don">Compartir datos</button>` : ''}</div>
+          ${d?.enlace_pago ? `<a class="boton" href="${esc(d.enlace_pago)}" target="_blank" rel="noopener">Pagar con tarjeta</a><p class="tenue chica">Se abre la página segura del proveedor de pagos.</p>` : ''}
+          <p class="tenue chica">Por seguridad, ningún banco permite que otra app llene la transferencia por ti: tú confirmas el envío en tu propia app.</p>
+          <p class="tenue">${d?.recibo_deducible ? 'Emitimos recibo deducible de impuestos.' : 'Si necesitas comprobante, solicítalo:'} ${pendiente(d?.contacto_recibo?.startsWith('[') ? '' : d?.contacto_recibo, d?.contacto_recibo ?? '')}</p>
+        </div>
       </section>
       <section class="tarjeta"><h2 class="sec">Donativos en especie</h2><p class="tenue">Lo que más necesitamos ahora:</p>
         <ul class="necesidades">${i.necesidades.map((n) => `<li>${I.caja(18)}<span>${esc(n.articulo)}${n.cantidad ? ` <small>(${esc(n.cantidad)})</small>` : ''}</span>${n.urgente ? '<em class="pill p-rojo">Urgente</em>' : ''}</li>`).join('') || '<li class="tenue">Por ahora no hay necesidades registradas.</li>'}</ul>
         <p class="tenue">Puedes llevarlos a la estación: ${pendiente(e?.direccion?.startsWith('[') ? '' : e?.direccion, e?.direccion ?? '')}</p>
       </section>
-      <section class="tarjeta"><h2 class="sec">Súmate como voluntario</h2><p>${pendiente(d?.voluntariado?.startsWith('[') ? '' : d?.voluntariado, d?.voluntariado ?? '')}</p>
-        ${telEstacion() ? `<a class="boton claro" href="tel:${telEstacion()}">${I.mano(18)} Quiero ser voluntario</a>` : ''}</section>
+      <a class="tarjeta-vol" href="#/voluntario">${I.mano(28)}<span><b>Súmate como voluntario</b><small>Llena la solicitud en 2 minutos</small></span>${I.flecha(20)}</a>
       <section class="tarjeta"><h2 class="sec">Quiénes somos</h2><p>${esc(e?.quienes_somos ?? '')}</p>
         <p class="tenue">${esc(e?.nombre ?? '')} · ${pendiente(e?.direccion?.startsWith('[') ? '' : e?.direccion, '')}</p>
         <p class="enlaces-est">${telEstacion() ? `<a href="tel:${telEstacion()}">${I.tel(16)} ${esc(e?.telefono_texto ?? e?.telefono)}</a>` : ''}
@@ -519,10 +526,60 @@ function apoya() {
           ${Object.entries(e?.redes ?? {}).filter(([, u]) => /^https:\/\//.test(u)).map(([k, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(k[0].toUpperCase() + k.slice(1))}</a>`).join('')}</p></section>
       <p class="legal centro"><a href="#/privacidad">Aviso de privacidad</a> · <a href="#/terminos">Términos de uso</a></p>
       <p class="credito oscuro"><img src="${BASE}geoug.png" alt=""><span>App desarrollada sin costo por <b>GEO UG Developers</b> · Universidad de Guanajuato</span></p>`;
-    document.getElementById('copiar')?.addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(clabe); aviso('CLABE copiada.'); } catch { aviso(clabe); }
-    });
+    let monto = '';
+    const valores = () => ({ monto, clabe, titular: d?.titular ?? '', concepto: d?.concepto ?? 'Donativo SIMUB' });
+    const todo = () => `Donativo a ${d?.titular ?? 'SIMUB'}\nBanco: ${d?.banco ?? ''}\nCLABE: ${clabe}\nMonto: $${monto}\nConcepto: ${d?.concepto ?? ''}`;
+    const copiar = async (t: string, msg: string) => { try { await navigator.clipboard.writeText(t); aviso(msg); } catch { aviso(t); } };
+    $('contenido').querySelectorAll<HTMLButtonElement>('[data-monto]').forEach((b) => b.addEventListener('click', () => {
+      $('contenido').querySelectorAll('[data-monto]').forEach((x) => x.classList.toggle('on', x === b));
+      const otro = b.dataset.monto === 'otro'; $('caja-otro').hidden = !otro;
+      monto = otro ? $<HTMLInputElement>('monto-otro').value : b.dataset.monto!;
+      $('don-monto').textContent = monto ? `$${monto}` : '—'; $('pasos-don').hidden = false;
+      if (otro) $<HTMLInputElement>('monto-otro').focus();
+    }));
+    $<HTMLInputElement>('monto-otro').addEventListener('input', (e) => { monto = (e.target as HTMLInputElement).value; $('don-monto').textContent = monto ? `$${monto}` : '—'; });
+    $('contenido').querySelectorAll<HTMLButtonElement>('[data-copiar]').forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.copiar as keyof ReturnType<typeof valores>; copiar(valores()[k], 'Copiado. Pégalo en tu app de banco.');
+    }));
+    document.getElementById('copiar-todo')?.addEventListener('click', () => copiar(todo(), 'Datos copiados.'));
+    document.getElementById('compartir-don')?.addEventListener('click', () => { navigator.share({ title: 'Donativo SIMUB', text: todo() }).catch(() => {}); });
   }).catch(() => { $('contenido').innerHTML = '<p class="tenue">Sin conexión con el servidor.</p>'; });
+}
+
+// ---------------------------------------------------------------- voluntariado (formulario)
+function voluntario() {
+  const d = info?.config.donativos;
+  app.innerHTML = `${cabecera('Súmate como voluntario', '#/noticias')}<main class="pantalla">
+    <section class="tarjeta"><h2 class="sec">Requisitos</h2><p>${esc(d?.voluntariado ?? 'Mayor de 18 años, preparatoria terminada o cursando, disponibilidad de horario y trabajar o estudiar.')}</p></section>
+    <form class="tarjeta" id="f-vol"><h2 class="sec">Solicitud</h2>
+      <label class="campo"><span>Nombre completo</span><input name="nombre" required minlength="3" maxlength="120" autocomplete="name"></label>
+      <div class="dos"><label class="campo"><span>Edad</span><input name="edad" type="number" inputmode="numeric" min="18" max="80" required></label>
+        <label class="campo"><span>Teléfono</span><input name="telefono" type="tel" inputmode="tel" required minlength="10" maxlength="20" autocomplete="tel"></label></div>
+      <label class="campo"><span>Correo (opcional)</span><input name="correo" type="email" autocomplete="email"></label>
+      <fieldset class="campo"><legend>Escolaridad</legend><div class="chips">${[['prepa_terminada', 'Prepa terminada'], ['prepa_cursando', 'Prepa cursando'], ['licenciatura', 'Licenciatura o más'], ['otra', 'Otra']]
+        .map(([k, t]) => `<label class="chip-op"><input type="radio" name="escolaridad" value="${t}" ${k === 'prepa_terminada' ? 'required' : ''}>${t}</label>`).join('')}</div></fieldset>
+      <fieldset class="campo"><legend>Actualmente</legend><div class="chips">${['Estudio', 'Trabajo', 'Estudio y trabajo']
+        .map((t) => `<label class="chip-op"><input type="radio" name="ocupacion" value="${t}" required>${t}</label>`).join('')}</div></fieldset>
+      <fieldset class="campo"><legend>¿Cuándo podrías apoyar?</legend><div class="chips">${['Mañanas', 'Tardes', 'Noches', 'Fines de semana']
+        .map((t) => `<label class="chip-op"><input type="checkbox" name="disponibilidad" value="${t}">${t}</label>`).join('')}</div></fieldset>
+      <label class="campo"><span>¿Por qué quieres ser voluntario? (opcional)</span><textarea name="motivo" rows="3" maxlength="1000"></textarea></label>
+      <label class="consent"><input type="checkbox" required> Acepto el <a href="#/privacidad">aviso de privacidad</a>. SIMUB usará estos datos solo para contactarme sobre el voluntariado.</label>
+      <button class="boton" type="submit">Enviar solicitud</button></form></main>`;
+  $('f-vol').addEventListener('submit', async (e) => {
+    e.preventDefault(); const fd = new FormData(e.target as HTMLFormElement); const b = (e.target as HTMLFormElement).querySelector('button')!;
+    if (Number(fd.get('edad')) < 18) return aviso('Debes ser mayor de 18 años.');
+    b.disabled = true; b.textContent = 'Enviando…';
+    const p = { nombre: fd.get('nombre'), edad: Number(fd.get('edad')), telefono: fd.get('telefono'), correo: fd.get('correo'), escolaridad: fd.get('escolaridad'),
+      ocupacion: fd.get('ocupacion'), disponibilidad: fd.getAll('disponibilidad'), motivo: fd.get('motivo') };
+    try {
+      await enviarVoluntario(p);
+      const correo = info?.config.estacion?.correo;
+      app.querySelector('main')!.innerHTML = `<section class="tarjeta centro">${I.check(48)}<h2>¡Gracias, ${esc(String(p.nombre).split(' ')[0])}!</h2>
+        <p>Recibimos tu solicitud. La estación te contactará por teléfono.</p>
+        ${correo ? `<a class="boton claro" href="mailto:${esc(correo)}?subject=${encodeURIComponent('Solicitud de voluntariado')}&body=${encodeURIComponent(`Nombre: ${p.nombre}\nEdad: ${p.edad}\nTeléfono: ${p.telefono}\nEscolaridad: ${p.escolaridad}\nActualmente: ${p.ocupacion}\nDisponibilidad: ${(p.disponibilidad as string[]).join(', ')}\n\n${p.motivo ?? ''}`)}">Enviar también por correo</a>` : ''}
+        <a class="boton" href="#/noticias">Volver</a></section>`;
+    } catch (err) { aviso((err as Error).message === 'limite_reportes' ? 'Ya enviaste una solicitud hoy.' : 'No se pudo enviar. Revisa tu conexión.'); b.disabled = false; b.textContent = 'Enviar solicitud'; }
+  });
 }
 
 // ---------------------------------------------------------------- legal
@@ -546,6 +603,7 @@ function ir() {
     case 'noticias': return noticias();
     case 'noticia': return noticia(arg);
     case 'apoya': return apoya();
+    case 'voluntario': return voluntario();
     case 'privacidad': return legal('privacidad');
     case 'terminos': return legal('terminos');
     default: return inicio();

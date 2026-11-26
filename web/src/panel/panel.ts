@@ -8,7 +8,9 @@ import { FORMULARIOS, MOTIVOS_REVISION, ORDEN_TIPOS } from '../formularios';
 import type { Estado } from '../api';
 import { columnas, horizontales } from './graficas';
 import { entregarPdf, partePdf } from './pdf';
-import { activarImportar, tarjetaImportar, vistaInformes, vistaMando, vistaServicio, vistaServicios, type Ctx } from './mando';
+import { activarImportar, tarjetaImportar, vistaCaptura, vistaInformes, vistaMando, vistaServicio, vistaServicios, type Ctx } from './mando';
+import { activarRespaldo, arrancarSesion, cambioTurno, copiaAutomatica, tarjetaRespaldo, terminarSesion, vistaControl, vistaVoluntarios } from './control';
+import { clima, pastillaClima, detalleClima } from './clima';
 import {
   accion, actualizar, cerrarRevision, codigos, dbp, detalle, guardarConfig, guardarParte, informe, insertar, proponerFecha,
   reportes, revisiones, servicioDesdeReporte, tabla, urlsFotos, yo, type Detalle, type Informe, type Parte, type Reporte, type Revision, type Yo,
@@ -38,7 +40,8 @@ const ESTADO_REV: Record<string, { txt: string; cls: string }> = {
 };
 const MOT = Object.fromEntries(MOTIVOS_REVISION);
 const ERRORES: Record<string, string> = {
-  solo_admin: 'Solo un administrador puede cerrar un reporte.', transicion_invalida: 'Ese estado ya se había marcado.',
+  solo_admin: 'Solo el Comandante o el responsable de la app pueden hacer esto.', bloqueado: 'Este parte ya está cerrado o firmado: solo un administrador puede corregirlo.',
+  firma_invalida: 'La firma no es válida; vuelve a firmar.', transicion_invalida: 'Ese estado ya se había marcado.',
   cerrado: 'Este reporte ya está cerrado.', tiempo_vencido: 'Ya pasaron 2 minutos; ese cambio ya no se puede deshacer.',
   sin_permiso: 'Tu cuenta no tiene permiso para esto.', fecha_pasada: 'La fecha ya pasó.',
   clasificacion_invalida: 'Elige el tipo de servicio.', anulado: 'Este folio está anulado.', texto_vacio: 'Escribe el texto.',
@@ -181,27 +184,33 @@ async function iniciar() {
       <button class="btn" id="salir">Salir</button></div></main>`;
     $('salir').addEventListener('click', salir); return;
   }
+  await arrancarSesion(data.session.user.id);
   ir();
+  copiaAutomatica(ctx);
 }
-async function salir() { limpiar(); await dbp.auth.signOut(); mio = null; history.replaceState(null, '', location.pathname); pantallaAcceso(); }
+async function salir() { limpiar(); await terminarSesion('cierre'); await dbp.auth.signOut(); mio = null; history.replaceState(null, '', location.pathname); pantallaAcceso(); }
 
 // ---------------------------------------------------------------- marco
-const SECCIONES = [
+const SECCIONES: { id: string; txt: string; ic: (n: number) => string; roles?: string[] }[] = [
   { id: 'mando', txt: 'Centro de mando', ic: I.unidad },
+  { id: 'captura', txt: 'Reporte 911 / externo', ic: I.tel },
   { id: 'reportes', txt: 'Reportes de la app', ic: I.campana },
   { id: 'servicios', txt: 'Servicios y partes', ic: I.lista },
   { id: 'agenda', txt: 'Revisiones', ic: I.calendario },
   { id: 'informe', txt: 'Informes', ic: I.noticias },
-  { id: 'ajustes', txt: 'Ajustes', ic: I.escudo, admin: true },
+  { id: 'voluntarios', txt: 'Voluntariado', ic: I.mano, roles: ['admin', 'coordinador'] },
+  { id: 'control', txt: 'Control interno', ic: I.lista, roles: ['admin'] },
+  { id: 'ajustes', txt: 'Ajustes', ic: I.escudo, roles: ['admin'] },
 ];
 function marco(activa: string, titulo: string, sub: string, contenido: string, acciones = '') {
   raiz.innerHTML = `
   <div class="marco">
     <aside class="lateral">
       <a class="logo" href="#mando"><img src="${BASE}escudo-192.png" alt=""><span><b>SIMUB</b><small>Panel de la estación</small></span></a>
-      <nav aria-label="Secciones">${SECCIONES.filter((s) => !s.admin || mio!.rol === 'admin').map((s) =>
+      <nav aria-label="Secciones">${SECCIONES.filter((s) => !s.roles || s.roles.includes(mio!.rol)).map((s) =>
         `<a href="#${s.id}" class="${s.id === activa ? 'on' : ''}" ${s.id === activa ? 'aria-current="page"' : ''}>${s.ic(18)}<span>${s.txt}</span><em id="n-${s.id}"></em></a>`).join('')}</nav>
-      <div class="pie-lateral"><b>${esc(mio!.nombre || correo)}</b><span>${ROL_TXT[mio!.rol]}</span>
+      <div class="pie-lateral"><span class="chica">En turno</span><b>${esc(mio!.nombre || correo)}</b><span>${esc(mio!.cargo || ROL_TXT[mio!.rol])}</span>
+        <button class="btn salir-lat" id="turno-lat">Cambio de turno</button>
         ${mio!.alertas_vinculado ? '' : '<span class="alerta-txt">Falta vincular el grupo de Telegram</span>'}
         <button class="btn salir-lat" id="salir">Cerrar sesión</button>
         <span class="credito"><img src="${BASE}geoug-clara.png" alt=""> GEO UG Developers</span></div>
@@ -212,6 +221,7 @@ function marco(activa: string, titulo: string, sub: string, contenido: string, a
     </main>
   </div>`;
   $('salir').addEventListener('click', salir);
+  $('turno-lat').addEventListener('click', () => ctx.turno());
   revisiones(new Date(Date.now() - 864e5)).then((vs) => {
     const n = vs.filter((v) => v.estado === 'solicitada').length; const e = document.getElementById('n-agenda'); if (e) e.textContent = n ? String(n) : '';
   }).catch(() => {});
@@ -222,6 +232,8 @@ const ctx: Ctx = {
   raiz, rol: () => mio!.rol, marco, aviso, errores: ERRORES,
   ciclo: (fn, ms) => { ciclo = window.setInterval(fn, ms); },
   nuevoMapa: (id) => { mapa = L.map(id); capaBase(mapa); return mapa; },
+  yo: () => mio!,
+  turno: () => cambioTurno(ctx, mio!, async () => { mio = await yo(); ir(); }),
 };
 
 // ================================================================ TABLERO DE GUARDIA
@@ -231,10 +243,11 @@ function vistaGuardia() {
   <div class="guardia">
     <header class="g-barra">
       <img src="${BASE}escudo-192.png" alt=""><div class="g-tit"><b>SIMUB · GUARDIA</b><span id="g-estado-red">Conectando…</span></div>
-      <span class="g-reloj" id="g-reloj"></span>
+      <span class="g-reloj" id="g-reloj"></span><span id="g-clima"></span>
       <button class="btn g-btn" id="g-activar">${I.campana(18)} Activar tablero</button>
       <button class="btn g-btn" id="g-silencio" hidden>Silenciar 1 min</button>
       <button class="btn g-btn" id="g-pantalla">Pantalla completa</button>
+      <button class="btn g-btn" id="g-turno">Cambio de turno</button>
       <a class="btn g-btn" href="#mando">Salir</a>
     </header>
     <div class="g-cuerpo">
@@ -254,6 +267,15 @@ function vistaGuardia() {
     cargar();
   });
   $('g-silencio').addEventListener('click', () => { alarma.silencioHasta = Date.now() + 60000; aviso('Alarma en silencio 1 minuto.'); });
+  $('g-turno').addEventListener('click', () => ctx.turno());
+  const pintarClima = async () => { const k = await clima(); const e = document.getElementById('g-clima'); if (e) e.innerHTML = pastillaClima(k); };
+  pintarClima(); const relojClima = window.setInterval(pintarClima, 15 * 60000);
+  window.addEventListener('hashchange', () => clearInterval(relojClima), { once: true });
+  $('g-clima').addEventListener('click', async () => {
+    const k = await clima(); const f = document.createElement('div'); f.className = 'cajon-fondo';
+    f.innerHTML = `<aside class="cajon"><div class="det-cab"><div><h2>Tiempo y riesgo de incendio</h2></div><button class="btn cerrar-x" aria-label="Cerrar">✕</button></div>${detalleClima(k)}</aside>`;
+    document.body.appendChild(f); f.addEventListener('click', (e) => { if (e.target === f || (e.target as HTMLElement).closest('.cerrar-x')) f.remove(); });
+  });
   $('g-pantalla').addEventListener('click', () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); });
 
   let primeraVez = true;
@@ -613,6 +635,7 @@ async function vistaAjustes() {
     tabla<{ id: number; nombre: string; cargo: string | null; activo: boolean }>('personal', 'nombre'),
     tabla<{ id: string; titulo: string; categoria: string; visible: boolean; destacada: boolean; publicada_en: string }>('noticias', 'publicada_en'),
     tabla<{ id: number; articulo: string; urgente: boolean; activa: boolean }>('necesidades', 'orden'), codigos().catch(() => [])]);
+  const colonias = await tabla<{ id: number; nombre: string; tipo: string | null; activa: boolean }>('colonias', 'nombre').catch(() => []);
   const c = Object.fromEntries(cfg.map((x) => [x.clave, x.valor])) as Record<string, Record<string, unknown>>;
   const campo = (grupo: string, k: string, etq: string, tipo = 'text', ayuda = '') => {
     const val = c[grupo]?.[k];
@@ -625,10 +648,10 @@ async function vistaAjustes() {
     <section class="tarjeta"><h3>Grupos de Telegram (@SimubGtoBot)</h3><p class="tenue">Agrega el bot al grupo y un administrador escribe <code>/vincular CÓDIGO</code> dentro del grupo.</p>
       <table class="tabla"><tbody>${cods.map((x) => `<tr><td>${ROL_CHAT[x.rol] ?? x.rol}</td><td><code>${esc(x.codigo)}</code></td><td>${x.vinculado ? '<em class="pill p-verde">Vinculado</em>' : '<em class="pill p-gris">Sin vincular</em>'}</td></tr>`).join('')}</tbody></table></section>
     ${tarjetaImportar}
-    <section class="tarjeta peligro"><h3>Preparar para producción</h3>
-      <p class="tenue">Borra <b>todos</b> los reportes, revisiones y servicios capturados en pruebas, sus fotos y las noticias de ejemplo. El histórico importado del Excel se conserva.
-      Los folios vuelven a empezar en 0001. Los datos de la estación, unidades y personal se conservan. No se puede deshacer.</p>
-      <div class="fila-btn"><input id="confirma-limpiar" placeholder="Escribe BORRAR para confirmar"><button class="btn rojo" id="limpiar" type="button">Borrar datos de prueba</button></div></section>
+    ${tarjetaRespaldo()}
+    ${mio!.super ? `<section class="tarjeta peligro"><h3>Preparar para producción (solo desarrollador)</h3>
+      <p class="tenue">Borra los reportes, revisiones y servicios capturados en pruebas. El histórico importado se conserva. Queda en el control interno. No se puede deshacer.</p>
+      <div class="fila-btn"><input id="confirma-limpiar" placeholder="Escribe BORRAR para confirmar"><button class="btn rojo" id="limpiar" type="button">Borrar datos de prueba</button></div></section>` : ''}
     <form class="tarjeta" id="f-cfg"><h3>Datos de la estación (se ven en la app)</h3>
       <div class="rejilla-2">${campo('estacion', 'telefono', 'Teléfono de la estación', 'text', '10 dígitos; lo marca el botón «Llamar»')}${campo('estacion', 'horario', 'Horario de atención')}
       ${campo('estacion', 'direccion', 'Dirección')}${campo('estacion', 'correo', 'Correo de contacto')}</div>
@@ -645,7 +668,12 @@ async function vistaAjustes() {
       <form class="fila-btn" data-nuevo="unidades"><input name="nombre" placeholder="Ej. Unidad 4" required><input name="tipo" placeholder="Tipo (pipa, rescate…)"><button class="btn">Agregar</button></form></section>
     <section class="tarjeta"><h3>Personal</h3><ul class="cat">${personal.map((u) => `<li class="${u.activo ? '' : 'inactivo'}"><span>${esc(u.nombre)} <small>${esc(u.cargo ?? '')}</small></span>
       <button class="btn chico" data-tog="personal" data-id="${u.id}" data-campo="activo" data-val="${!u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button></li>`).join('')}</ul>
-      <form class="fila-btn" data-nuevo="personal"><input name="nombre" placeholder="Nombre" required><input name="cargo" placeholder="Cargo o rango"><button class="btn">Agregar</button></form></section>
+      <form class="fila-btn" data-nuevo="personal"><input name="nombre" placeholder="Nombre" required><input name="cargo" placeholder="Cargo o rango"><button class="btn">Agregar</button></form>
+      <details><summary>Agregar varios a la vez (pegar lista)</summary><form class="bloque" id="f-lote"><label>Un nombre por renglón. Si quieres, agrega el cargo después de una coma: «Juan Pérez, Bombero»
+        <textarea name="lista" rows="6"></textarea></label><button class="btn">Agregar todos</button></form></details></section>
+    <section class="tarjeta"><h3>Colonias y lugares frecuentes (${colonias.filter((x) => x.activa).length})</h3><p class="tenue">Aparecen como sugerencia al escribir el lugar; también se puede escribir uno que no esté.</p>
+      <div class="chips-col">${colonias.filter((x) => x.activa).map((x) => `<span class="chip-col">${esc(x.nombre)}<button type="button" data-tog="colonias" data-id="${x.id}" data-campo="activa" data-val="false" aria-label="Quitar ${esc(x.nombre)}">✕</button></span>`).join('')}</div>
+      <form class="fila-btn" data-nuevo="colonias"><input name="nombre" placeholder="Ej. Col. Nueva" required><select name="tipo"><option>Colonia</option><option>Fraccionamiento</option><option>Comunidad</option><option>Barrio</option><option>Vialidad</option><option>Otro</option></select><button class="btn">Agregar</button></form></section>
     <section class="tarjeta"><h3>Necesidades en especie</h3><p class="tenue">También se actualizan desde Telegram con /necesidades.</p><ul class="cat">${necesidades.filter((n) => n.activa).map((n) => `<li><span>${esc(n.articulo)} ${n.urgente ? '<em class="pill p-rojo">Urgente</em>' : ''}</span>
       <span><button class="btn chico" data-tog="necesidades" data-id="${n.id}" data-campo="urgente" data-val="${!n.urgente}">${n.urgente ? 'Normal' : 'Urgente'}</button>
       <button class="btn chico" data-tog="necesidades" data-id="${n.id}" data-campo="activa" data-val="false">Quitar</button></span></li>`).join('')}</ul>
@@ -664,7 +692,8 @@ async function vistaAjustes() {
     try { for (const [g, val] of Object.entries(nuevos)) await guardarConfig(g, val); aviso('Datos guardados. Ya se ven en la app.'); }
     catch { aviso('No se pudo guardar.', true); }
   });
-  $('limpiar').addEventListener('click', async () => {
+  activarRespaldo(ctx);
+  document.getElementById('limpiar')?.addEventListener('click', async () => {
     if ($<HTMLInputElement>('confirma-limpiar').value.trim().toUpperCase() !== 'BORRAR') return aviso('Escribe BORRAR para confirmar.', true);
     const b = $<HTMLButtonElement>('limpiar'); b.disabled = true; b.textContent = 'Borrando…';
     try { await accion({ accion: 'limpiar' }); aviso('Listo: se borraron los datos de prueba.'); vistaAjustes(); }
@@ -677,6 +706,12 @@ async function vistaAjustes() {
     try { for (const n of noticias.filter((x) => x.destacada)) await actualizar('noticias', n.id, { destacada: false });
       await actualizar('noticias', b.dataset.dest!, { destacada: true }); vistaAjustes(); } catch { aviso('No se pudo cambiar.', true); }
   }));
+  document.getElementById('f-lote')?.addEventListener('submit', async (e) => {
+    e.preventDefault(); const txt = String(new FormData(e.target as HTMLFormElement).get('lista') ?? '');
+    const filas = txt.split(/\n+/).map((l) => l.split(',')).map(([n, ...c]) => ({ nombre: n.trim(), cargo: c.join(',').trim() || null })).filter((x) => x.nombre.length > 2);
+    let ok = 0; for (const f of filas) { try { await insertar('personal', f); ok++; } catch { /* repetido */ } }
+    aviso(`Se agregaron ${ok} de ${filas.length}.`); vistaAjustes();
+  });
   raiz.querySelectorAll<HTMLFormElement>('[data-nuevo]').forEach((f) => f.addEventListener('submit', async (e) => {
     e.preventDefault(); const fd = new FormData(f); const fila: Record<string, unknown> = {};
     fd.forEach((v, k) => { fila[k] = k === 'urgente' ? true : String(v).trim(); });
@@ -691,6 +726,9 @@ function ir() {
   const [ruta, arg] = location.hash.replace(/^#\/?/, '').split('/');
   switch (ruta || 'mando') {
     case 'mando': return vistaMando(ctx);
+    case 'captura': return vistaCaptura(ctx);
+    case 'control': return vistaControl(ctx);
+    case 'voluntarios': return vistaVoluntarios(ctx);
     case 'guardia': return vistaGuardia();
     case 'parte': return vistaParte(arg);
     case 'servicios': return vistaServicios(ctx);
