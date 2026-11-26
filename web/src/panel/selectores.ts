@@ -6,13 +6,14 @@ const esc = (t: unknown) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '
  * Selector de varias opciones: chips con las opciones de la lista y un campo para escribir alguien que no esté.
  * El valor queda en un <input type="hidden" name=...> separado por comas (compatible con lo ya guardado).
  */
-export function multi(nombre: string, opciones: string[], seleccion: string[], placeholder = 'Escribir otro y Enter', deshabilitado = false, sugerencias: string[] = opciones) {
+export function multi(nombre: string, opciones: string[], seleccion: string[], placeholder = 'Escribir otro y Enter', deshabilitado = false, sugerencias: string[] = opciones, fuenteLista = '') {
   const sel = new Set(seleccion.map((x) => x.trim()).filter(Boolean));
   const todas = [...new Set([...opciones, ...sel])];
   return `<div class="multi" data-multi="${esc(nombre)}">
     <input type="hidden" name="${esc(nombre)}" value="${esc([...sel].join(', '))}">
     <div class="multi-chips">${todas.map((o) => `<button type="button" class="mchip ${sel.has(o) ? 'on' : ''}" data-v="${esc(o)}" ${deshabilitado ? 'disabled' : ''}>${esc(o)}</button>`).join('')}</div>
-    ${deshabilitado ? '' : `<input class="multi-otro" placeholder="${esc(placeholder)}" list="${esc(nombre)}-lista"><datalist id="${esc(nombre)}-lista">${sugerencias.map((o) => `<option value="${esc(o)}">`).join('')}</datalist>`}
+    ${deshabilitado ? '' : fuenteLista ? `<span class="ac" data-ac="${esc(fuenteLista)}"><input class="multi-otro" placeholder="${esc(placeholder)}" autocomplete="off"><ul class="ac-lista" hidden></ul></span>`
+      : `<input class="multi-otro" placeholder="${esc(placeholder)}" list="${esc(nombre)}-lista"><datalist id="${esc(nombre)}-lista">${sugerencias.map((o) => `<option value="${esc(o)}">`).join('')}</datalist>`}
   </div>`;
 }
 
@@ -32,7 +33,7 @@ export function activarMulti(raiz: HTMLElement) {
       b.classList.add('on'); otro!.value = ''; sync();
     };
     otro?.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); agregar(); } });
-    otro?.addEventListener('change', () => { if (otro.value && [...(otro.list?.options ?? [])].some((o) => o.value === otro.value)) agregar(); });
+    otro?.addEventListener('change', () => { if (otro.value && (!otro.list || [...otro.list.options].some((o) => o.value === otro.value))) agregar(); });
     otro?.addEventListener('blur', agregar);
   });
 }
@@ -74,27 +75,39 @@ export function activarAgregables(raiz: HTMLElement, fabrica: Record<string, (i:
 }
 
 // ---------------------------------------------------------------- firma en pantalla
-/** Lienzo de firma. Devuelve funciones para limpiar y leer la imagen (PNG recortado, fondo transparente). */
+/** Lienzo de firma: funciona con dedo (celular, tableta, iPhone), lápiz y mouse. */
 export function lienzoFirma(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext('2d')!;
-  const escala = () => { const r = canvas.getBoundingClientRect(); const d = window.devicePixelRatio || 1;
+  let ancho = 0, trazos = 0, ultimo: [number, number] | null = null;
+  const preparar = () => {   // el tamaño se toma cuando el lienzo ya se ve (si no, mediría 0)
+    const r = canvas.getBoundingClientRect(); if (!r.width || Math.abs(r.width - ancho) < 1) return;
+    const d = window.devicePixelRatio || 1; ancho = r.width;
     canvas.width = Math.round(r.width * d); canvas.height = Math.round(r.height * d); ctx.setTransform(d, 0, 0, d, 0, 0);
-    ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#14287a'; };
-  escala();
-  let dibujando = false, trazos = 0, ultimo: [number, number] | null = null;
-  const pos = (e: PointerEvent): [number, number] => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-  canvas.addEventListener('pointerdown', (e) => { dibujando = true; ultimo = pos(e); canvas.setPointerCapture(e.pointerId); e.preventDefault(); });
-  canvas.addEventListener('pointermove', (e) => {
-    if (!dibujando || !ultimo) return; const p = pos(e);
-    ctx.beginPath(); ctx.moveTo(...ultimo); ctx.lineTo(...p); ctx.stroke(); ultimo = p; trazos++;
-  });
-  const fin = () => { dibujando = false; ultimo = null; };
-  canvas.addEventListener('pointerup', fin); canvas.addEventListener('pointercancel', fin);
+    ctx.lineWidth = 2.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#14287a'; trazos = 0;
+  };
+  requestAnimationFrame(() => requestAnimationFrame(preparar));
+  const pos = (x: number, y: number): [number, number] => { const r = canvas.getBoundingClientRect(); return [x - r.left, y - r.top]; };
+  const inicio = (x: number, y: number) => { preparar(); ultimo = pos(x, y); ctx.beginPath(); ctx.arc(ultimo[0], ultimo[1], 1.2, 0, 7); ctx.fillStyle = '#14287a'; ctx.fill(); };
+  const mover = (x: number, y: number) => { if (!ultimo) return; const p = pos(x, y); ctx.beginPath(); ctx.moveTo(...ultimo); ctx.lineTo(...p); ctx.stroke(); ultimo = p; trazos++; };
+  const fin = () => { ultimo = null; };
+  if ('PointerEvent' in window) {
+    canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); try { canvas.setPointerCapture(e.pointerId); } catch { /* */ } inicio(e.clientX, e.clientY); });
+    canvas.addEventListener('pointermove', (e) => { if (!ultimo) return; e.preventDefault(); const ev = (e.getCoalescedEvents?.() ?? [e]); for (const c of ev) mover(c.clientX, c.clientY); });
+    canvas.addEventListener('pointerup', fin); canvas.addEventListener('pointercancel', fin); canvas.addEventListener('pointerleave', fin);
+  } else {   // navegadores viejos
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); const t = e.touches[0]; inicio(t.clientX, t.clientY); }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); const t = e.touches[0]; mover(t.clientX, t.clientY); }, { passive: false });
+    canvas.addEventListener('touchend', fin);
+    canvas.addEventListener('mousedown', (e) => inicio(e.clientX, e.clientY)); canvas.addEventListener('mousemove', (e) => { if (e.buttons) mover(e.clientX, e.clientY); });
+    (window as Window).addEventListener('mouseup', fin);
+  }
+  // evita que la página se desplace mientras se firma (iPhone)
+  canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  window.addEventListener('resize', preparar);
   return {
     limpiar() { ctx.clearRect(0, 0, canvas.width, canvas.height); trazos = 0; },
-    vacia: () => trazos < 8,
+    vacia: () => trazos < 5,
     imagen(): string {
-      // reduce a máx. 600 px de ancho para que pese poco
       const k = Math.min(1, 600 / canvas.width), c2 = document.createElement('canvas');
       c2.width = Math.round(canvas.width * k); c2.height = Math.round(canvas.height * k);
       c2.getContext('2d')!.drawImage(canvas, 0, 0, c2.width, c2.height);

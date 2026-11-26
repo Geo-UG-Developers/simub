@@ -82,18 +82,31 @@ const alarma = {
   activar() {
     try { this.ctx ??= new AudioContext(); void this.ctx.resume(); } catch { this.ctx = null; }
   },
-  sonar() {
+  // Sirena de bomberos (tipo «wail» + «yelp»), saturada y comprimida para que suene lo más fuerte posible.
+  sonar(duracion = 4.5) {
     if (!this.ctx || Date.now() < this.silencioHasta) return;
-    const t0 = this.ctx.currentTime;
-    for (let i = 0; i < 3; i++) {
-      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
-      o.type = 'square'; o.frequency.setValueAtTime(880, t0 + i * 0.5); o.frequency.linearRampToValueAtTime(660, t0 + i * 0.5 + 0.4);
-      g.gain.setValueAtTime(0.0001, t0 + i * 0.5); g.gain.exponentialRampToValueAtTime(0.25, t0 + i * 0.5 + 0.03);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.5 + 0.42);
-      o.connect(g).connect(this.ctx.destination); o.start(t0 + i * 0.5); o.stop(t0 + i * 0.5 + 0.45);
-    }
+    const ctx = this.ctx, t0 = ctx.currentTime + 0.02, fin = t0 + duracion;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -20; comp.knee.value = 0; comp.ratio.value = 12; comp.attack.value = 0.002; comp.release.value = 0.1;
+    const sat = ctx.createWaveShaper(); const curva = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = (i / 512) - 1; curva[i] = Math.tanh(3.2 * x); }
+    sat.curve = curva;
+    const vol = ctx.createGain(); vol.gain.setValueAtTime(0.0001, t0); vol.gain.exponentialRampToValueAtTime(1, t0 + 0.05);
+    vol.gain.setValueAtTime(1, fin - 0.08); vol.gain.exponentialRampToValueAtTime(0.0001, fin);
+    sat.connect(comp).connect(vol).connect(ctx.destination);
+    const voz = (tipo: OscillatorType, mult: number, g: number) => {
+      const o = ctx.createOscillator(), ga = ctx.createGain(); o.type = tipo; ga.gain.value = g;
+      // primera mitad «wail» (sube y baja lento), segunda mitad «yelp» (rápido)
+      let t = t0; const mitad = t0 + duracion * 0.55;
+      o.frequency.setValueAtTime(600 * mult, t);
+      while (t < mitad) { o.frequency.linearRampToValueAtTime(1500 * mult, t + 0.55); o.frequency.linearRampToValueAtTime(650 * mult, t + 1.1); t += 1.1; }
+      while (t < fin) { o.frequency.linearRampToValueAtTime(1600 * mult, t + 0.12); o.frequency.linearRampToValueAtTime(700 * mult, t + 0.24); t += 0.24; }
+      o.connect(ga).connect(sat); o.start(t0); o.stop(fin);
+    };
+    voz('sawtooth', 1, 0.7); voz('square', 0.5, 0.45); voz('square', 1.005, 0.35);
   },
-  iniciar() { if (this.timer) return; this.sonar(); this.timer = window.setInterval(() => this.sonar(), 5000); },
+  probar() { this.activar(); const s = this.silencioHasta; this.silencioHasta = 0; this.sonar(2.5); this.silencioHasta = s; },
+  iniciar() { if (this.timer) return; this.sonar(); this.timer = window.setInterval(() => this.sonar(), 6000); },
   parar() { if (this.timer) { clearInterval(this.timer); this.timer = undefined; } },
 };
 let wakeLock: { release(): Promise<void> } | null = null;
@@ -246,6 +259,7 @@ function vistaGuardia() {
       <span class="g-reloj" id="g-reloj"></span><span id="g-clima"></span>
       <button class="btn g-btn" id="g-activar">${I.campana(18)} Activar tablero</button>
       <button class="btn g-btn" id="g-silencio" hidden>Silenciar 1 min</button>
+      <button class="btn g-btn" id="g-probar">Probar sirena</button>
       <button class="btn g-btn" id="g-pantalla">Pantalla completa</button>
       <button class="btn g-btn" id="g-turno">Cambio de turno</button>
       <a class="btn g-btn" href="#mando">Salir</a>
@@ -263,11 +277,12 @@ function vistaGuardia() {
   let activado = false;
   $('g-activar').addEventListener('click', () => {
     alarma.activar(); pantallaEncendida(); activado = true;
-    $('g-activar').hidden = true; $('g-silencio').hidden = false; aviso('Tablero activo: sonará la alarma con cada reporte nuevo.');
+    $('g-activar').hidden = true; $('g-silencio').hidden = false; aviso('Tablero activo: sonará la sirena con cada reporte nuevo hasta que alguien toque «Enterado».');
     cargar();
   });
   $('g-silencio').addEventListener('click', () => { alarma.silencioHasta = Date.now() + 60000; aviso('Alarma en silencio 1 minuto.'); });
   $('g-turno').addEventListener('click', () => ctx.turno());
+  $('g-probar').addEventListener('click', () => { alarma.probar(); aviso('Si no se oye fuerte, sube el volumen de la computadora o conecta una bocina.'); });
   const pintarClima = async () => { const k = await clima(); const e = document.getElementById('g-clima'); if (e) e.innerHTML = pastillaClima(k); };
   pintarClima(); const relojClima = window.setInterval(pintarClima, 15 * 60000);
   window.addEventListener('hashchange', () => clearInterval(relojClima), { once: true });
@@ -669,6 +684,9 @@ async function vistaAjustes() {
     <section class="tarjeta"><h3>Personal</h3><ul class="cat">${personal.map((u) => `<li class="${u.activo ? '' : 'inactivo'}"><span>${esc(u.nombre)} <small>${esc(u.cargo ?? '')}</small></span>
       <button class="btn chico" data-tog="personal" data-id="${u.id}" data-campo="activo" data-val="${!u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button></li>`).join('')}</ul>
       <form class="fila-btn" data-nuevo="personal"><input name="nombre" placeholder="Nombre" required><input name="cargo" placeholder="Cargo o rango"><button class="btn">Agregar</button></form>
+      <div class="bloque"><b>Importar la lista de personal (Excel)</b><span class="tenue chica">Columnas «Nombre» y el cargo a su izquierda (como «lista_personal_activo»). Actualiza cargos sin duplicar.</span>
+        <div class="fila-btn"><input type="file" id="per-xls" accept=".xlsx,.xlsm"><label class="fila-check2"><input type="checkbox" id="per-baja"> Desactivar a quien ya no aparezca</label><button class="btn" type="button" id="per-imp" disabled>Importar</button></div>
+        <p id="per-res" class="tenue chica"></p></div>
       <details><summary>Agregar varios a la vez (pegar lista)</summary><form class="bloque" id="f-lote"><label>Un nombre por renglón. Si quieres, agrega el cargo después de una coma: «Juan Pérez, Bombero»
         <textarea name="lista" rows="6"></textarea></label><button class="btn">Agregar todos</button></form></details></section>
     <section class="tarjeta"><h3>Colonias y lugares frecuentes (${colonias.filter((x) => x.activa).length})</h3><p class="tenue">Aparecen como sugerencia al escribir el lugar; también se puede escribir uno que no esté.</p>
@@ -706,6 +724,31 @@ async function vistaAjustes() {
     try { for (const n of noticias.filter((x) => x.destacada)) await actualizar('noticias', n.id, { destacada: false });
       await actualizar('noticias', b.dataset.dest!, { destacada: true }); vistaAjustes(); } catch { aviso('No se pudo cambiar.', true); }
   }));
+  let listaPer: { nombre: string; cargo: string | null }[] = [];
+  document.getElementById('per-xls')?.addEventListener('change', async (e) => {
+    const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
+    try {
+      const { leerExcel } = await import('./excel');
+      const filas = leerExcel(new Uint8Array(await f.arrayBuffer()))[0].filas;
+      const cab = filas.findIndex((r) => r.some((x) => /^nombre/i.test(String(x ?? '').trim())));
+      const cN = filas[cab].findIndex((x) => /^nombre/i.test(String(x ?? '').trim()));
+      const cC = filas[cab].findIndex((x) => /cargo|puesto|rango/i.test(String(x ?? ''))) >= 0 ? filas[cab].findIndex((x) => /cargo|puesto|rango/i.test(String(x ?? ''))) : cN - 1;
+      listaPer = filas.slice(cab + 1).map((r) => ({ nombre: String(r[cN] ?? '').replace(/\s+/g, ' ').trim(), cargo: cC >= 0 ? String(r[cC] ?? '').trim() || null : null }))
+        .filter((x) => x.nombre.length > 1);
+      $('per-res').textContent = `${listaPer.length} personas leídas (${[...new Set(listaPer.map((x) => x.cargo))].filter(Boolean).join(', ')}).`;
+      $<HTMLButtonElement>('per-imp').disabled = !listaPer.length;
+    } catch { $('per-res').textContent = 'No se pudo leer el archivo.'; }
+  });
+  document.getElementById('per-imp')?.addEventListener('click', async () => {
+    const b = $<HTMLButtonElement>('per-imp'); b.disabled = true;
+    const { error } = await dbp.from('personal').upsert(listaPer.map((x) => ({ ...x, activo: true })), { onConflict: 'nombre' });
+    if (error) { aviso('No se pudo importar.', true); b.disabled = false; return; }
+    if ($<HTMLInputElement>('per-baja').checked) {
+      const nombres = new Set(listaPer.map((x) => x.nombre));
+      for (const p of personal.filter((x) => x.activo && !nombres.has(x.nombre))) await actualizar('personal', p.id, { activo: false });
+    }
+    aviso(`Lista de personal actualizada: ${listaPer.length} personas.`); vistaAjustes();
+  });
   document.getElementById('f-lote')?.addEventListener('submit', async (e) => {
     e.preventDefault(); const txt = String(new FormData(e.target as HTMLFormElement).get('lista') ?? '');
     const filas = txt.split(/\n+/).map((l) => l.split(',')).map(([n, ...c]) => ({ nombre: n.trim(), cargo: c.join(',').trim() || null })).filter((x) => x.nombre.length > 2);

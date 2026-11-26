@@ -7,6 +7,7 @@ import { CORPORACIONES, MEDIOS, MESES_TXT, leerHistorico, type Clase } from './c
 import { descargar, escribirExcel, leerExcel, type Celda } from './excel';
 import { entregarPdf, servicioPdf } from './pdf';
 import { clima, detalleClima, pastillaClima } from './clima';
+import { activarBuscadores, buscador, cargarLugares, fuente } from './buscador';
 import { inicioSesion } from './control';
 import {
   CODIGOS_PERSONA, COLORES, ESPECIFICACIONES, TIPOS_VEHICULO, activarAgregables, activarArea, activarMulti, area, datalist, filasAgregables, huella,
@@ -223,7 +224,10 @@ async function listas() {
     tabla<{ nombre: string; activa: boolean; tipo: string | null }>('unidades', 'nombre').catch(() => []),
     tabla<{ nombre: string; cargo: string | null; activo: boolean }>('personal', 'nombre').catch(() => []),
     tabla<{ nombre: string; tipo: string | null; activa: boolean }>('colonias', 'nombre').catch(() => [])]);
-  return { unidades: uds.filter((u) => u.activa).map((u) => u.nombre), personal: per.filter((p) => p.activo).map((p) => p.nombre),
+  const personal = per.filter((p) => p.activo);
+  fuente('personal', () => personal.map((p) => ({ n: p.nombre, t: p.cargo ?? '' })));
+  await cargarLugares(BASE, col.filter((x) => x.activa));
+  return { unidades: uds.filter((u) => u.activa).map((u) => u.nombre), personal: personal.map((p) => p.nombre),
     colonias: col.filter((x) => x.activa).map((x) => x.nombre) };
 }
 
@@ -249,9 +253,9 @@ export async function vistaCaptura(c: Ctx) {
       <div class="rejilla-2"><label>Detalle <small>(opcional; toca una sugerencia o escribe)</small><input name="especificacion" maxlength="200"></label>
       <label class="fila-check"><span>Falsa alarma</span><input type="checkbox" name="falsa_alarma"></label></div></section>
     <section class="bloque"><h3>3. ¿Dónde?</h3><div class="rejilla-2">
-      <label>Colonia o comunidad<input name="colonia" list="l-col" placeholder="Empieza a escribir…" required></label>
-      <label>Calle, número o referencia<input name="lugar" maxlength="300" placeholder="Ej. Calle Pino 12, frente a la tienda"></label></div>
-      ${datalist('l-col', L2.colonias)}
+      <label>Colonia o comunidad${buscador('colonia', '', 'colonias', 'placeholder="Toca y empieza a escribir…" required')}</label>
+      <label>Calle, número o referencia${buscador('lugar', '', 'calles', 'maxlength="300" placeholder="Ej. Calle Pino 12, frente a la tienda"')}</label></div>
+      <input type="hidden" name="lat"><input type="hidden" name="lon">
       <div class="rejilla-2"><label>Quién reporta <small>(opcional)</small><input name="reportante" maxlength="120"></label>
       <label>Teléfono <small>(opcional)</small><input name="telefono" inputmode="tel" maxlength="20"></label></div></section>
     <section class="bloque"><h3>4. Unidades</h3>
@@ -264,8 +268,9 @@ export async function vistaCaptura(c: Ctx) {
     <div class="cap-pie"><button class="btn primario grande" type="submit">Registrar y dar folio</button><span class="tenue chica">Captura: <b>${esc(c.yo().nombre)}</b></span></div>
   </form><div id="cap-ok"></div>`;
   const form = $<HTMLFormElement>('f-cap');
-  activarMulti(form);
   const set = (n: string, v: string) => { (form.elements.namedItem(n) as HTMLInputElement).value = v; };
+  activarMulti(form);
+  activarBuscadores(form, (_i, o) => { if (o.lat) { set('lat', String(o.lat)); set('lon', String(o.lon)); } });
   form.querySelectorAll<HTMLElement>('[data-radio]').forEach((g) => g.addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('.mchip'); if (!b) return;
     g.querySelectorAll('.mchip').forEach((x) => x.classList.toggle('on', x === b)); set(g.dataset.radio!, b.dataset.v!);
@@ -287,7 +292,7 @@ export async function vistaCaptura(c: Ctx) {
     try {
       const r = await guardarServicio(null, {
         clasificacion: g('clasificacion'), especificacion: g('especificacion'), colonia: g('colonia'), lugar: g('lugar'), medio,
-        reportante: g('reportante'), telefono: g('telefono'), h_reporte: desdeLocal(g('h_reporte')), unidades: modo === 'concluido' ? uds : uds,
+        reportante: g('reportante'), telefono: g('telefono'), h_reporte: desdeLocal(g('h_reporte')), lat: g('lat'), lon: g('lon'), unidades: modo === 'concluido' ? uds : uds,
         falsa_alarma: fd.get('falsa_alarma') === 'on', datos: g('folio_911') ? { folio_911: g('folio_911') } : {},
         apoyos: g('medio') === 'Otra corporación' ? { [g('corp')]: { unidades: '', encargado: '' } } : {},
         h_despacho: desdeLocal(g('h_despacho')), h_llegada: desdeLocal(g('h_llegada')), h_base: desdeLocal(g('h_base')),
@@ -324,8 +329,8 @@ export async function vistaServicio(c: Ctx, id: string) {
   const corpsSel = Object.keys(S.apoyos ?? {});
   const filaTrip = (i: number, t = trip[i] ?? { unidad: '', maquinista: '', jefe: '', bomberos: '' }) => `<tr data-trip="${i}">
     <td><select name="t_unidad_${i}" ${dis}><option value="">—</option>${[...new Set([...L2.unidades, t.unidad].filter(Boolean))].map((u) => `<option ${u === t.unidad ? 'selected' : ''}>${esc(u)}</option>`).join('')}</select></td>
-    <td>${persona(`t_maquinista_${i}`, t.maquinista, 'l-per', dis)}</td><td>${persona(`t_jefe_${i}`, t.jefe, 'l-per', dis)}</td>
-    <td>${multi(`t_bomberos_${i}`, [], valoresMulti(t.bomberos), 'Nombre y Enter', !editable, L2.personal)}</td></tr>`;
+    <td>${buscador(`t_maquinista_${i}`, t.maquinista, 'personal', dis)}</td><td>${buscador(`t_jefe_${i}`, t.jefe, 'personal', dis)}</td>
+    <td>${multi(`t_bomberos_${i}`, [], valoresMulti(t.bomberos), 'Toca para elegir', !editable, [], 'personal')}</td></tr>`;
   const filaVeh = (i: number, x: Record<string, string> = veh[i] ?? {}) => `<tr data-veh="${i}">${([['placas', ''], ['color', 'l-color'], ['tipo', 'l-tveh'], ['modelo', ''], ['conductor', ''], ['propietario', '']] as const)
     .map(([k, l]) => `<td><input name="v_${k}_${i}" value="${v(x[k])}" ${l ? `list="${l}"` : ''} placeholder="${k[0].toUpperCase() + k.slice(1)}" ${dis}></td>`).join('')}</tr>`;
   const filaPer = (i: number, x = per[i] ?? { nombre: '', codigo: '', edad: '' }) => `<tr data-per="${i}"><td><input name="p_nombre_${i}" value="${v(x.nombre)}" placeholder="Nombre" ${dis}></td>
@@ -333,7 +338,7 @@ export async function vistaServicio(c: Ctx, id: string) {
   const filasCorp = (sel: string[], prev: Record<string, { unidades?: string; encargado?: string }>) => sel.map((k, i) => `<tr><th>${esc(k)}<input type="hidden" name="a_k_${i}" value="${esc(k)}"></th>
     <td><input name="a_u_${i}" value="${v(prev[k]?.unidades)}" placeholder="Unidad(es)" ${dis}></td><td><input name="a_e_${i}" value="${v(prev[k]?.encargado)}" placeholder="Encargado(s)" ${dis}></td></tr>`).join('');
   const firmaCaja = (k: string, t: string) => { const f = S.firmas?.[k]; const nombre = (S as unknown as Record<string, string | null>)[k] ?? f?.nombre ?? '';
-    return `<div class="firma-caja"><span class="etq">${t}</span>${persona(`f_${k}`, nombre, 'l-per', dis + ' placeholder="Nombre"')}
+    return `<div class="firma-caja"><span class="etq">${t}</span>${buscador(`f_${k}`, nombre, 'personal', dis + ' placeholder="Nombre"')}
       ${f?.imagen ? `<img src="${f.imagen}" alt="Firma de ${esc(f.nombre ?? t)}"><small class="tenue">Firmó ${new Date(f.en).toLocaleString('es-MX')} · registró ${esc(f.registro)}</small>` : '<div class="firma-vacia">Sin firma</div>'}
       ${editable ? `<button type="button" class="btn chico" data-firmar="${k}">${f?.imagen ? 'Volver a firmar' : 'Firmar en pantalla'}</button>` : ''}</div>`; };
   $('parte').innerHTML = `
@@ -356,8 +361,8 @@ export async function vistaServicio(c: Ctx, id: string) {
     <section class="bloque"><h3>Reporte y lugar</h3><div class="rejilla-3">
       <label>Medio<select name="medio">${[...new Set([...MEDIOS, S.medio].filter(Boolean))].map((x) => `<option ${x === S.medio ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>
       <label>Reportante<input name="reportante" value="${v(S.reportante)}"></label><label>Teléfono<input name="telefono" value="${v(S.telefono)}" inputmode="tel"></label></div>
-      <div class="rejilla-2"><label>Colonia o comunidad<input name="colonia" list="l-col" value="${v(S.colonia)}" placeholder="Empieza a escribir…"></label>
-      <label>Calle, número o referencia<input name="lugar" value="${v(S.lugar)}"></label></div>
+      <div class="rejilla-2"><label>Colonia o comunidad${buscador('colonia', S.colonia, 'colonias', 'placeholder="Toca y empieza a escribir…"')}</label>
+      <label>Calle, número o referencia${buscador('lugar', S.lugar, 'calles')}</label></div><input type="hidden" name="lat"><input type="hidden" name="lon">
       ${S.lat != null ? `<p class="tenue chica">Ubicación de la app: <a href="https://www.google.com/maps/search/?api=1&query=${S.lat},${S.lon}" target="_blank" rel="noopener">${S.lat.toFixed(5)}, ${S.lon!.toFixed(5)}</a></p>` : ''}</section>
     <section class="bloque"><h3>Tipo de servicio</h3><div class="rejilla-3">
       <label>Servicio<select name="clasificacion" required>${opcionesClase(S.clasificacion)}</select></label>
@@ -380,7 +385,7 @@ export async function vistaServicio(c: Ctx, id: string) {
     <section class="bloque"><h3>Firmas</h3><div class="rejilla-3 firmas">${FIRMAS.map(([k, t]) => firmaCaja(k, t)).join('')}</div>
       <p class="tenue chica">Se firma con el dedo (celular o tableta) o con el mouse. Al firmar el jefe de servicio, el parte queda cerrado y se guarda su huella digital (SHA-256) para comprobar que no cambió.</p></section>
   </fieldset>
-    ${datalist('l-per', L2.personal)}${datalist('l-col', L2.colonias)}${datalist('l-esp', ESPECIFICACIONES[S.clasificacion] ?? [])}
+    ${datalist('l-esp', ESPECIFICACIONES[S.clasificacion] ?? [])}
     ${datalist('l-cod', CODIGOS_PERSONA)}${datalist('l-tveh', TIPOS_VEHICULO)}${datalist('l-color', COLORES)}
     <div class="pie-parte">
       ${editable ? '<button class="btn primario" type="submit">Guardar parte</button>' : ''}
@@ -394,10 +399,12 @@ export async function vistaServicio(c: Ctx, id: string) {
     ${S.estado === 'anulado' ? '' : '<form class="fila-btn" id="f-bit"><input name="t" maxlength="1000" placeholder="Agregar nota a la bitácora" required><button class="btn">Agregar</button></form>'}</section>`;
   const form = $<HTMLFormElement>('f-parte');
   activarMulti(form); activarArea(form);
+  activarBuscadores(form, (i, o) => { if (o.lat && S.lat == null && (i.name === 'colonia' || i.name === 'lugar')) {
+    (form.elements.namedItem('lat') as HTMLInputElement).value = String(o.lat); (form.elements.namedItem('lon') as HTMLInputElement).value = String(o.lon); } });
   const cuenta = (sel: string) => () => form.querySelectorAll(sel).length;
   activarAgregables(form, { 't-veh': (i) => filaVeh(i, {}), 't-per': (i) => filaPer(i, { nombre: '', codigo: '', edad: '' }) }, { 't-veh': cuenta('[data-veh]'), 't-per': cuenta('[data-per]') });
   form.querySelector('[data-agregar="t-trip"]')?.addEventListener('click', () => {
-    const i = form.querySelectorAll('[data-trip]').length; form.querySelector('#t-trip tbody')!.insertAdjacentHTML('beforeend', filaTrip(i, { unidad: '', maquinista: '', jefe: '', bomberos: '' })); activarMulti(form);
+    const i = form.querySelectorAll('[data-trip]').length; form.querySelector('#t-trip tbody')!.insertAdjacentHTML('beforeend', filaTrip(i, { unidad: '', maquinista: '', jefe: '', bomberos: '' })); activarMulti(form); activarBuscadores(form);
   });
   form.querySelectorAll<HTMLButtonElement>('[data-ahora]').forEach((b) => b.addEventListener('click', () => {
     (form.elements.namedItem(b.dataset.ahora!) as HTMLInputElement).value = localInput(new Date().toISOString());
@@ -426,7 +433,7 @@ export async function vistaServicio(c: Ctx, id: string) {
     const nombres = new Set(tripulacion.flatMap((t) => [t.maquinista, t.jefe, ...valoresMulti(t.bomberos)]).filter(Boolean));
     return {
       fecha: g('fecha'), falsa_alarma: fd.get('falsa_alarma') === 'on', clasificacion: g('clasificacion'), especificacion: g('especificacion'),
-      area_afectada: g('area_afectada'), colonia: g('colonia'), lugar: g('lugar'), medio: g('medio'), reportante: g('reportante'), telefono: g('telefono'),
+      area_afectada: g('area_afectada'), colonia: g('colonia'), lugar: g('lugar'), lat: g('lat'), lon: g('lon'), medio: g('medio'), reportante: g('reportante'), telefono: g('telefono'),
       h_reporte: desdeLocal(g('h_reporte')), h_despacho: desdeLocal(g('h_despacho')), h_llegada: desdeLocal(g('h_llegada')),
       h_disponible: desdeLocal(g('h_disponible')), h_base: desdeLocal(g('h_base')), km_salida: g('km_salida'), km_llegada: g('km_llegada'),
       personal_num: g('personal_num') || (nombres.size ? String(nombres.size) : ''), unidades: deTrip.length ? deTrip : S.unidades,
@@ -444,16 +451,22 @@ export async function vistaServicio(c: Ctx, id: string) {
   // firma en pantalla
   form.querySelectorAll<HTMLButtonElement>('[data-firmar]').forEach((b) => b.addEventListener('click', async () => {
     const k = b.dataset.firmar!, t = FIRMAS.find((x) => x[0] === k)![1];
-    const nombre = (form.elements.namedItem(`f_${k}`) as HTMLInputElement).value.trim();
-    if (!nombre) return c.aviso(`Escribe o elige el nombre del ${t.toLowerCase()} antes de firmar.`, true);
-    const { fondo, cerrar } = cajon(`${cabCajon(`Firma · ${t}`, esc(nombre))}
-      <p class="tenue">Firma dentro del recuadro con el dedo o el mouse.</p><canvas class="lienzo-firma" id="lienzo"></canvas>
+    const campoNombre = form.elements.namedItem(`f_${k}`) as HTMLInputElement;
+    const { fondo, cerrar } = cajon(`${cabCajon(`Firma · ${t}`, folioTxt(S))}
+      <label>Nombre de quien firma${buscador('firmante', campoNombre.value, 'personal', 'placeholder="Toca para elegir o escribe"')}</label>
+      <p class="tenue">Firma dentro del recuadro blanco con el dedo, el lápiz o el mouse.</p>
+      <div class="lienzo-caja"><canvas class="lienzo-firma" id="lienzo"></canvas><span class="lienzo-linea">Firme aquí</span></div>
       ${k === 'jefe_servicio' ? '<p class="aviso-candado chico">Al firmar el jefe de servicio el parte queda <b>cerrado</b>. Revisa que todo esté completo.</p>' : ''}
       <div class="fila-btn"><button class="btn" id="f-limpiar" type="button">Borrar</button><button class="btn primario" id="f-ok" type="button">Guardar firma</button></div>`, 'Firma');
+    activarBuscadores(fondo);
+    if (campoNombre.value) (document.activeElement as HTMLElement | null)?.blur();
     const lz = lienzoFirma(fondo.querySelector<HTMLCanvasElement>('#lienzo')!);
     fondo.querySelector('#f-limpiar')!.addEventListener('click', () => lz.limpiar());
     fondo.querySelector('#f-ok')!.addEventListener('click', async () => {
-      if (lz.vacia()) return c.aviso('La firma está vacía.', true);
+      const nombre = fondo.querySelector<HTMLInputElement>('[name=firmante]')!.value.trim();
+      if (!nombre) return c.aviso('Escribe o elige el nombre de quien firma.', true);
+      if (lz.vacia()) return c.aviso('Falta la firma: dibújala en el recuadro blanco.', true);
+      campoNombre.value = nombre;
       if (!(await guardar())) return;
       try {
         const h = k === 'jefe_servicio' ? await huella({ folio: folioTxt(S), ...recolectar() }) : null;
