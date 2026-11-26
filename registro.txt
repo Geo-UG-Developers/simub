@@ -1,0 +1,6 @@
+lugares: https://overpass-api.de/api/interpreter HTTP Error 502: Bad Gateway
+lugares: https://lz4.overpass-api.de/api/interpreter OK 499
+calles: https://overpass-api.de/api/interpreter HTTP Error 502: Bad Gateway
+calles: https://lz4.overpass-api.de/api/interpreter HTTP Error 502: Bad Gateway
+calles: https://z.overpass-api.de/api/interpreter OK 5938
+3433 lugares
