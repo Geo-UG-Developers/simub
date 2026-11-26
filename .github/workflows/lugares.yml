@@ -10,45 +10,51 @@ permissions:
 jobs:
   lugares:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Consultar Overpass
-        timeout-minutes: 12
         run: |
-          cat > q.txt <<'Q'
-          [out:json][timeout:120][bbox:20.80,-101.55,21.30,-101.05];
-          (
-            nwr["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter|locality|isolated_dwelling|borough)$"]["name"];
-            way["landuse"="residential"]["name"];
-            way["highway"]["name"];
-          );
-          out tags center qt;
-          Q
-          for u in https://overpass-api.de/api/interpreter https://overpass.kumi.systems/api/interpreter; do
-            curl -sf --retry 2 -m 150 --data-urlencode data@q.txt "$u" -o osm.json && break
-          done
-          python3 - <<'PY'
-          import json
-          d = json.load(open('osm.json'))['elements']
-          TIPO = {'city': 'Ciudad', 'town': 'Localidad', 'village': 'Comunidad', 'hamlet': 'Comunidad', 'isolated_dwelling': 'Comunidad',
-                  'suburb': 'Colonia', 'neighbourhood': 'Colonia', 'quarter': 'Barrio', 'borough': 'Colonia', 'locality': 'Paraje'}
+          cat > osm.py <<'PY'
+          import json, time, urllib.request, urllib.parse
+          BB = '20.85,-101.50,21.25,-101.08'
+          CONSULTAS = {
+            'lugares': f'[out:json][timeout:90][bbox:{BB}];(nwr["place"]["name"];way["landuse"="residential"]["name"];);out tags center qt;',
+            'calles': f'[out:json][timeout:170][bbox:{BB}];way["highway"]["name"];out tags center qt;',
+          }
+          SERVIDORES = ['https://overpass-api.de/api/interpreter', 'https://lz4.overpass-api.de/api/interpreter', 'https://z.overpass-api.de/api/interpreter',
+                        'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
+          registro, datos = [], {}
+          for k, q in CONSULTAS.items():
+            for intento in range(2):
+              for s in SERVIDORES:
+                try:
+                  req = urllib.request.Request(s, data=urllib.parse.urlencode({'data': q}).encode(), headers={'User-Agent': 'SIMUB-GeoUG/1.0 (bomberos Guanajuato)'})
+                  with urllib.request.urlopen(req, timeout=200) as r:
+                    datos[k] = json.load(r)['elements']; registro.append(f'{k}: {s} OK {len(datos[k])}'); break
+                except Exception as e:
+                  registro.append(f'{k}: {s} {e}'); time.sleep(5)
+              if k in datos: break
+              time.sleep(30)
+          print('\n'.join(registro))
+          TIPO = {'city': 'Ciudad', 'town': 'Localidad', 'village': 'Comunidad', 'hamlet': 'Comunidad', 'isolated_dwelling': 'Comunidad', 'farm': 'Comunidad',
+                  'suburb': 'Colonia', 'neighbourhood': 'Colonia', 'quarter': 'Barrio', 'borough': 'Colonia', 'locality': 'Paraje', 'square': 'Plaza'}
           out = {}
-          for e in d:
-              t = e.get('tags', {}); n = (t.get('name') or '').strip()
-              if not n: continue
-              c = e.get('center') or {'lat': e.get('lat'), 'lon': e.get('lon')}
-              if 'place' in t: tipo = TIPO.get(t['place'], 'Lugar')
-              elif t.get('landuse') == 'residential': tipo = 'Colonia'
-              else: tipo = 'Calle'
-              k = (n.lower(), tipo)
-              if k not in out and c.get('lat'): out[k] = {'n': n, 't': tipo, 'lat': round(c['lat'], 5), 'lon': round(c['lon'], 5)}
+          for e in datos.get('lugares', []) + datos.get('calles', []):
+            t = e.get('tags', {}); n = (t.get('name') or '').strip()
+            c = e.get('center') or {'lat': e.get('lat'), 'lon': e.get('lon')}
+            if not n or not c.get('lat'): continue
+            tipo = TIPO.get(t.get('place'), 'Lugar') if 'place' in t else 'Colonia' if t.get('landuse') == 'residential' else 'Calle'
+            out.setdefault((n.lower(), tipo), {'n': n, 't': tipo, 'lat': round(c['lat'], 5), 'lon': round(c['lon'], 5)})
           lst = sorted(out.values(), key=lambda x: (x['t'] == 'Calle', x['n']))
-          print(len(lst), 'lugares;', sum(1 for x in lst if x['t'] != 'Calle'), 'no calles')
           json.dump({'fuente': '© colaboradores de OpenStreetMap (ODbL)', 'lugares': lst}, open('lugares-gto.json', 'w'), ensure_ascii=False, separators=(',', ':'))
+          open('registro.txt', 'w').write('\n'.join(registro) + f'\n{len(lst)} lugares\n')
           PY
+          python3 osm.py
       - name: Guardar en la rama datos-osm
+        if: always()
         run: |
           git config user.name "github-actions" && git config user.email "github-actions@users.noreply.github.com"
-          git fetch origin datos-osm || true
-          git checkout --orphan datos-osm-nueva && git rm -rq --cached . && mkdir -p web/public && mv lugares-gto.json web/public/
-          git add web/public/lugares-gto.json && git commit -qm "Lugares de Guanajuato desde OpenStreetMap" && git push -f origin HEAD:datos-osm
+          git checkout --orphan datos-osm-nueva && git rm -rq --cached . && mkdir -p web/public
+          [ -f lugares-gto.json ] && mv lugares-gto.json web/public/ || true
+          git add -f registro.txt web/public 2>/dev/null; git commit -qm "Lugares de Guanajuato desde OpenStreetMap" && git push -f origin HEAD:datos-osm
