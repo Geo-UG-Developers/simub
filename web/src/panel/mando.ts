@@ -6,7 +6,7 @@ import { FORMULARIOS } from '../formularios';
 import { CORPORACIONES, MEDIOS, MESES_TXT, leerHistorico, type Clase } from './catalogo';
 import { descargar, escribirExcel, leerExcel, type Celda } from './excel';
 import { entregarPdf, servicioPdf } from './pdf';
-import { clima, detalleClima, pastillaClima, widgetClima } from './clima';
+import { clima, detalleClima, pastillaClima } from './clima';
 import { columnas } from './graficas';
 import { activarClaves, campoClave, valorClave } from './clave';
 import { avisarVentanas } from './ventanas';
@@ -81,15 +81,15 @@ const EST_U: Record<string, { txt: string; cls: string }> = {
 
 export async function vistaMando(c: Ctx) {
   c.marco('mando', 'Centro de mando', 'Servicios en curso, estado de las unidades y bitácora. Se actualiza solo cada 15 segundos.',
-    `<div id="m-guardia" class="m-guardia"></div><div id="m-clima-w"></div><div id="m-alertas"></div><div id="m-pend"></div>
+    `<div id="m-guardia" class="m-guardia"></div><div id="m-alertas"></div><div id="m-pend"></div>
      <section class="tarjeta"><div class="fila-tit"><h3>Unidades</h3><span class="tenue chica">Toca una unidad para cambiar su estado.</span></div><div id="m-unidades" class="unidades"></div></section>
      <div class="fila-tit"><h3 id="m-tit">Servicios activos</h3><span class="tenue chica" id="m-act"></span></div>
      <div id="m-servicios" class="m-rejilla"><p class="tenue">Cargando…</p></div>`,
-    `<button class="btn" id="m-turno">${I.lista(16)} Cambio de cabinero</button>
+    `<span id="m-clima"></span><button class="btn" id="m-turno">${I.lista(16)} Cambio de cabinero</button>
      <a class="btn" href="#guardia" target="simub-tablero" title="Se abre en otra ventana">${I.campana(16)} Tablero de guardia</a>
      <a class="btn primario btn-generar" href="#captura">${I.mas(20)} Generar servicio</a>`);
   $('m-turno').addEventListener('click', () => c.turno());
-  const pintarClima = async () => { const k = await clima(); const e = document.getElementById('m-clima-w'); if (e) e.innerHTML = widgetClima(k); };
+  const pintarClima = async () => { const k = await clima(); const e = document.getElementById('m-clima'); if (e) e.innerHTML = pastillaClima(k); };
   pintarClima(); c.ciclo(pintarClima, 15 * 60000);
   document.querySelector('.cabecera p.tenue')!.insertAdjacentHTML('afterend', `<p class="en-turno">En turno: <b>${esc(c.yo().nombre)}</b>${c.yo().cargo ? ` · ${esc(c.yo().cargo)}` : ''}${inicioSesion() ? ` · desde ${hora(inicioSesion())}` : ''}</p>`);
   await catalogo().catch(() => c.aviso('No se pudo cargar el catálogo de servicios.', true));

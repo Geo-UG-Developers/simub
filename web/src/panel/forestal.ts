@@ -44,7 +44,7 @@ export async function vistaForestal(c: Ctx) {
   const xs = (await servicios(new Date(anio, 0, 1), new Date(anio + 1, 0, 1)).catch(() => [])).filter((s) => FORESTALES.includes(s.clasificacion) && s.estado !== 'anulado' && !s.falsa_alarma);
   const conArea = xs.filter((s) => s.estado === 'activo' || s.origen !== 'historico').slice(-40);
   for (const s of conArea) servicio(s.id).then((d) => { const g = d?.perimetro as { coordinates?: number[][][] } | undefined;
-    if (g?.coordinates?.[0]) L.polygon(g.coordinates[0].map(([lo, la]) => [la, lo] as [number, number]), { color: '#B3261E', fillOpacity: .3 }).addTo(mapa).bindTooltip(`#${s.folio} · ${s.area_afectada ?? ''}`); });
+    if (g?.coordinates?.[0]) L.polygon(g.coordinates[0].map(([lo, la]) => [la, lo] as [number, number]), { color: '#B3261E', fillOpacity: .3 }).addTo(mapa).bindTooltip(`#${s.folio} · ${String(s.area_afectada ?? '').replace(/[<>&"']/g, '')}`); });
   $('fo-lista').innerHTML = `<p>${xs.length} servicios en ${anio}.</p><div class="tabla-caja"><table class="tabla"><thead><tr><th>Folio</th><th>Fecha</th><th>Tipo</th><th>Lugar</th><th>Área</th><th>Duración</th><th></th></tr></thead><tbody>
     ${xs.slice().reverse().slice(0, 80).map((s) => { const m = s.h_despacho && s.h_base ? Math.round((+new Date(s.h_base) - +new Date(s.h_despacho)) / 60000) : null;
       return `<tr><td>${s.folio}</td><td class="nw">${esc(s.fecha)}</td><td>${esc(s.especificacion ?? s.clasificacion)}</td><td>${esc([s.colonia, s.lugar].filter(Boolean).join(', '))}</td>

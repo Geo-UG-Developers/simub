@@ -198,8 +198,7 @@ do $$ declare a jsonb; s1 bigint; s2 bigint; c jsonb; r jsonb; begin
   s1 := panel_sesion_iniciar('Cabina PC', null);
   perform pg_temp.ok((panel_latido(s1))->>'activa' = 'true', 'latido');
   perform panel_sesion_cerrar(s1, 'cambio_turno');
-  r := panel_respaldo(extract(year from now())::int);
-  perform pg_temp.ok(jsonb_array_length(r->'servicios') >= 1, 'respaldo con servicios');
+  begin perform panel_respaldo(extract(year from now())::int); perform pg_temp.ok(false, 'cabina no descarga respaldo'); exception when insufficient_privilege then null; end;
   perform pg_temp.como('66666666-6666-4666-8666-666666666666');   -- admin
   s2 := panel_sesion_iniciar('Cabina PC', s1);
   perform pg_temp.ok((select turno_de from sesiones where id = s2) = 'Guardia', 'cambio de turno anotado');
@@ -316,6 +315,19 @@ do $$ declare r jsonb; i int; begin
   perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r->'interno') x where x->>'corto' = 'O. Prueba'), 'oficial en grupo interno');
   perform panel_borrar_persona(i);
   perform pg_temp.ok(not exists (select 1 from personal where id = i) and exists (select 1 from auditoria where accion = 'persona_borrada'), 'persona borrada y auditada');
+end $$;
+
+-- 17. Copia completa solo para Admin. Maestro y sin códigos del bot; avisos de control interno
+do $$ declare r jsonb; begin
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');
+  begin perform panel_respaldo(2026); perform pg_temp.ok(false, 'cabina no descarga la copia'); exception when insufficient_privilege then null; end;
+  perform pg_temp.como('66666666-6666-4666-8666-666666666666');
+  perform auditoria_por_avisar();   -- primera vez: arranca desde lo más reciente, sin repetir el historial
+  r := panel_respaldo(extract(year from now())::int);
+  perform pg_temp.ok(not exists (select 1 from jsonb_array_elements(r->'personal') x where x ? 'tg_codigo' or x ? 'tg_chat_id'), 'copia sin códigos del bot');
+  r := auditoria_por_avisar();
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r) x where x->>'accion' = 'respaldo_descargado'), 'aviso de copia descargada');
+  perform pg_temp.ok(jsonb_array_length(auditoria_por_avisar()) = 0, 'no se repite el aviso');
 end $$;
 
 \echo 'TODAS LAS PRUEBAS DE SIMUB PASARON'

@@ -113,3 +113,26 @@ export function widgetClima(c: Clima | null) {
       <span class="tenue">Open-Meteo · ${new Date(c.en).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span></div>
   </section>`;
 }
+
+// ---------------------------------------------------------------- tablero de guardia (pantalla grande, fondo oscuro)
+/** Clima para decidir: riesgo grande, condiciones 30-30-30, datos con unidades, viento con flecha y pronóstico del día. */
+export function climaTablero(c: Clima | null) {
+  if (!c) return '<div class="tb-sin">Clima no disponible · se reintenta en 15 min</div>';
+  const r = regla303030(c), noche = (() => { const h = new Date().getHours(); return h < 7 || h >= 19; })();
+  const flecha = c.direccion == null ? '' : `<svg class="tb-flecha" viewBox="0 0 24 24" style="transform:rotate(${(c.direccion + 180) % 360}deg)" aria-hidden="true"><path d="M12 3l5 9h-3.5v9h-3v-9H7z" fill="currentColor"/></svg>`;
+  const dato = (etq: string, v: string, u: string, malo = false, extra = '') => `<div class="tb-dato ${malo ? 'malo' : ''}"><span>${etq}</span><b>${v}<small>${u}</small>${extra}</b></div>`;
+  const consejo = r.n >= 3 ? 'Condiciones extremas: rutas de escape y zona segura antes de atacar; reforzar el despacho forestal.'
+    : r.n === 2 ? 'Riesgo alto: avisar a unidades forestales y vigilar cambios de viento.'
+    : r.n === 1 ? 'Riesgo moderado: atención a incendios de pastizal.' : 'Riesgo bajo de incendio.';
+  return `<h2>Clima y riesgo de incendio</h2>
+    <div class="tb-riesgo ${r.nivel.cls}"><div><span>Riesgo de incendio · regla 30-30-30</span><b>${r.nivel.txt}</b></div>
+      <ul class="tb-303030">${[['>30 °C', `${Math.round(r.t)}°`], ['<30 % hum.', `${Math.round(r.h)}%`], ['>30 km/h', `${Math.round(r.v)}`]]
+        .map(([t, v], i) => `<li class="${r.cumple[i] ? 'si' : ''}"><b>${v}</b>${t}</li>`).join('')}</ul></div>
+    <p class="tb-consejo">${consejo}</p>
+    <div class="tb-datos"><div class="tb-dato tb-temp">${icono(c.codigo, noche)}<b>${Math.round(c.temp)}<small>°C</small></b></div>
+      ${dato('Humedad', String(Math.round(c.humedad)), '%', c.humedad < 30)}${dato(`Viento ${rumbo(c.direccion)}`, String(Math.round(c.viento)), 'km/h', c.viento > 30, flecha)}
+      ${dato('Rachas', String(Math.round(c.rachas)), 'km/h', c.rachas > 38)}</div>
+    <div class="tb-pron">${partes(c).map((p) => `<div class="${p.ahora ? 'ahora' : ''}">${p.ic}<div><span>${p.t}</span><b>${p.max != null ? `${Math.round(p.max)}°/${Math.round(p.min!)}°` : '—'}</b>
+      <small>Lluvia ${p.p}% · ${Math.round(p.v)} km/h</small></div></div>`).join('')}</div>
+    <p class="tb-pie-clima">${cielo(c.codigo)} · máx. ${Math.round(c.maxT)} °C · hum. mín. ${Math.round(c.minH)} %${c.uv != null ? ` · UV ${Math.round(c.uv)}` : ''} · amanece ${hh(c.amanecer)} · anochece ${hh(c.atardecer)}</p>`;
+}

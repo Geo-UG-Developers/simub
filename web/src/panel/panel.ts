@@ -21,10 +21,10 @@ import { guardia as leerGuardia, entrar, textoAcceso } from './datos';
 import { activarClaves, campoClave } from './clave';
 import { alCambiar, avisarVentanas } from './ventanas';
 import { activarRespaldo, arrancarSesion, cambioTurno, copiaAutomatica, tarjetaRespaldo, terminarSesion, vistaControl, vistaVoluntarios } from './control';
-import { clima, pastillaClima, detalleClima } from './clima';
+import { clima, climaTablero, regla303030 } from './clima';
 import {
   accion, actualizar, cerrarRevision, codigos, dbp, detalle, guardarConfig, guardarParte, informe, insertar, proponerFecha,
-  claveCambiada, mando, reportes, revisiones, servicioDesdeReporte, tabla, urlsFotos, yo, type Detalle, type Informe, type Parte, type Reporte, type Revision, type Yo,
+  claveCambiada, mando, type Mando, reportes, revisiones, servicioDesdeReporte, tabla, urlsFotos, yo, type Detalle, type Informe, type Parte, type Reporte, type Revision, type Yo,
 } from './datos';
 
 const BASE = import.meta.env.BASE_URL;
@@ -259,108 +259,144 @@ const ctx: Ctx = {
 function vistaGuardia() {
   document.body.classList.add('modo-guardia');
   raiz.innerHTML = `
-  <div class="guardia">
-    <header class="g-barra">
-      <img src="${BASE}escudo-192.png" alt=""><div class="g-tit"><b>SIMUB · GUARDIA</b><span id="g-estado-red">Conectando…</span></div>
-      <span class="g-reloj" id="g-reloj"></span><span id="g-clima"></span>
-      <button class="btn g-btn" id="g-activar">${I.campana(18)} Activar tablero</button>
-      <button class="btn g-btn" id="g-silencio" hidden>Silenciar 1 min</button>
-      <button class="btn g-btn" id="g-probar">Probar sirena</button>
-      <button class="btn g-btn" id="g-pantalla">Pantalla completa</button>
-      <button class="btn g-btn" id="g-turno">Cambio de turno</button>
-      <a class="btn g-btn" href="#mando">Salir</a>
+  <div class="tb">
+    <header class="tb-barra">
+      <div class="tb-marca"><img src="${BASE}escudo-192.png" alt=""><div><b>SIMUB · Tablero de guardia</b><span id="tb-red">Conectando…</span></div></div>
+      <div class="tb-turno" id="tb-turno"></div>
+      <div class="tb-hora"><b id="tb-reloj"></b><span id="tb-fecha"></span></div>
+      <div class="tb-acciones">
+        <button class="btn tb-btn tb-activar" id="g-activar">${I.campana(18)} Activar sirena</button>
+        <button class="btn tb-btn" id="g-silencio" hidden>Silenciar 1 min</button>
+        <button class="btn tb-btn" id="g-probar">Probar</button>
+        <button class="btn tb-btn" id="g-pantalla">Pantalla completa</button>
+        <button class="btn tb-btn" id="g-turno">Cambio de turno</button>
+        <a class="btn tb-btn" href="#mando">Salir</a></div>
     </header>
-    <div class="g-cuerpo">
-      <section class="g-lista" id="g-lista" aria-live="polite"></section>
-      <section class="g-mapas"><div class="g-mapa"><span class="g-mapa-tit">Emergencias</span><div id="mapa"></div></div>
-        <div class="g-mapa"><span class="g-mapa-tit">Unidades y oficiales en territorio <small id="g-terr-n"></small></span><div id="mapa2"></div></div></section>
-    </div>
-    <footer class="g-pie" id="g-pie"></footer>
+    <section class="tb-kpis" id="tb-kpis" aria-live="polite"></section>
+    <main class="tb-grid">
+      <section class="tb-col">
+        <div class="tb-panel tb-crece"><h2>Reportes de la app <em id="tb-n-rep"></em></h2><div class="tb-lista" id="g-lista"></div></div>
+        <div class="tb-panel tb-crece"><h2>Servicios activos <em id="tb-n-serv"></em></h2><div class="tb-lista" id="tb-serv"></div></div>
+      </section>
+      <section class="tb-mapas">
+        <div class="tb-mapa"><h2>Emergencias</h2><div id="mapa"></div></div>
+        <div class="tb-mapa"><h2>Unidades y oficiales en territorio <em id="g-terr-n"></em></h2><div id="mapa2"></div></div>
+      </section>
+      <section class="tb-col">
+        <div class="tb-panel tb-clima" id="tb-clima"><div class="tb-sin">Cargando clima…</div></div>
+        <div class="tb-panel"><h2>Unidades</h2><div class="tb-unidades" id="tb-unid"></div></div>
+        <div class="tb-panel"><h2>Pendientes del turno</h2><ul class="tb-avisos" id="tb-avisos"></ul></div>
+      </section>
+    </main>
   </div>`;
-  const pintarReloj = () => { const e = document.getElementById('g-reloj'); if (e) e.textContent = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); };
+  const pintarReloj = () => {
+    const d = new Date(), r = document.getElementById('tb-reloj'), f = document.getElementById('tb-fecha');
+    if (r) r.textContent = d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    if (f) { const t = d.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }); f.textContent = t[0].toUpperCase() + t.slice(1); }
+  };
   pintarReloj(); reloj = window.setInterval(pintarReloj, 1000);
   mapa = L.map('mapa', { zoomControl: true }).setView([21.019, -101.257], 13); capaBase(mapa);
-  const capa = L.layerGroup().addTo(mapa);
   mapa2 = L.map('mapa2', { zoomControl: true }).setView([21.019, -101.257], 13); capaBase(mapa2);
-  const capa2 = L.layerGroup().addTo(mapa2); let primera2 = true;
-  const territorio = async () => {
-    const m = await mando().catch(() => null); if (!m || !mapa2) return;
-    capa2.clearLayers(); capaServ.clearLayers(); const pts: L.LatLngTuple[] = [];
-    for (const sv of m.servicios.filter((x) => x.lat != null)) {
-      L.circleMarker([sv.lat!, sv.lon!], { radius: 11, color: '#fff', weight: 3, fillColor: '#B3261E', fillOpacity: .95 }).addTo(capaServ)
-        .bindTooltip(`Servicio #${sv.folio} · ${esc(sv.colonia ?? '')}`, { permanent: false });
-      L.circleMarker([sv.lat!, sv.lon!], { radius: 7, color: '#B3261E', weight: 2, fillOpacity: 0 }).addTo(capa2).bindTooltip(`Servicio #${sv.folio}`);
-      pts.push([sv.lat!, sv.lon!]);
-    }
-    for (const p of m.posiciones ?? []) {
-      const of = p.tipo === 'oficial', min = Math.round((Date.now() - +new Date(p.en)) / 60000);
-      L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', iconSize: [80, 24], iconAnchor: [40, 12],
-        html: `<span class="pin-unidad ${of ? 'oficial' : ''} ${min > 10 ? 'viejo' : ''}">${esc(p.unidad)}</span>` }) }).addTo(capa2)
-        .bindPopup(`<b>${esc(p.unidad)}</b>${p.autor ? `<br>${esc(p.autor)}` : ''}<br>${p.folio ? `Servicio #${p.folio}${p.clase ? ` · ${esc(p.clase)}` : ''}` : 'Sin servicio asignado'}
-          <br><small>Ubicación de hace ${min} min${p.precision_m ? ` · ±${p.precision_m} m` : ''}</small>`);
-      pts.push([p.lat, p.lon]);
-    }
-    const e = document.getElementById('g-terr-n'); if (e) e.textContent = `(${(m.posiciones ?? []).length} en el mapa · ${m.servicios.length} servicios activos)`;
-    if (pts.length && primera2) { mapa2.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 15 }); primera2 = false; }
-  };
-  const capaServ = L.layerGroup().addTo(mapa);
-  territorio(); ctx.ciclo(territorio, 15000);
-  let activado = false;
+  const capa = L.layerGroup().addTo(mapa), capaServ = L.layerGroup().addTo(mapa), capa2 = L.layerGroup().addTo(mapa2);
+  let activado = false, primeraVez = true, primera2 = true;
   $('g-activar').addEventListener('click', () => {
     alarma.activar(); pantallaEncendida(); activado = true;
-    $('g-activar').hidden = true; $('g-silencio').hidden = false; aviso('Tablero activo: sonará la sirena con cada reporte nuevo hasta que alguien toque «Enterado».');
+    $('g-activar').hidden = true; $('g-silencio').hidden = false; aviso('Sirena activa: sonará con cada reporte nuevo hasta que alguien toque «Enterado».');
     cargar();
   });
-  $('g-silencio').addEventListener('click', () => { alarma.silencioHasta = Date.now() + 60000; aviso('Alarma en silencio 1 minuto.'); });
+  $('g-silencio').addEventListener('click', () => { alarma.silencioHasta = Date.now() + 60000; aviso('Sirena en silencio 1 minuto.'); });
   $('g-turno').addEventListener('click', () => ctx.turno());
-  $('g-probar').addEventListener('click', () => { alarma.probar(); aviso('Si no se oye fuerte, sube el volumen de la computadora o conecta una bocina.'); });
-  const pintarClima = async () => { const k = await clima(); const e = document.getElementById('g-clima'); if (e) e.innerHTML = pastillaClima(k); };
-  pintarClima(); const relojClima = window.setInterval(pintarClima, 15 * 60000);
-  window.addEventListener('hashchange', () => clearInterval(relojClima), { once: true });
-  $('g-clima').addEventListener('click', async () => {
-    const k = await clima(); const f = document.createElement('div'); f.className = 'cajon-fondo';
-    f.innerHTML = `<aside class="cajon"><div class="det-cab"><div><h2>Tiempo y riesgo de incendio</h2></div><button class="btn cerrar-x" aria-label="Cerrar">✕</button></div>${detalleClima(k)}</aside>`;
-    document.body.appendChild(f); f.addEventListener('click', (e) => { if (e.target === f || (e.target as HTMLElement).closest('.cerrar-x')) f.remove(); });
-  });
+  $('g-probar').addEventListener('click', () => { alarma.probar(); aviso('Si no se oye fuerte, sube el volumen o conecta una bocina.'); });
   $('g-pantalla').addEventListener('click', () => { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}); });
-
-  let primeraVez = true;
+  let riesgo: { txt: string; cls: string; n: number } | null = null;
+  let CATN: Record<string, { nombre: string; color: string }> = {};
+  tabla<{ id: string; nombre: string; color: string }>('catalogo_servicios', 'orden').then((xs) => { CATN = Object.fromEntries(xs.map((x) => [x.id, x])); }).catch(() => {});
+  const pintarClima = async () => {
+    const k = await clima(); const e = document.getElementById('tb-clima'); if (!e) return;
+    e.innerHTML = climaTablero(k);
+    if (k) { const r = regla303030(k); riesgo = { txt: r.nivel.txt, cls: r.nivel.cls, n: r.n }; }
+  };
+  pintarClima(); ctx.ciclo(pintarClima, 15 * 60000);
+  const HITO_SIG: [keyof Mando['servicios'][number], string][] = [['h_despacho', 'Por despachar'], ['h_llegada', 'En camino'], ['h_disponible', 'En la escena'], ['h_base', 'Regresando']];
   const cargar = async () => {
-    let xs: Reporte[], vs: Revision[];
-    try { [xs, vs] = await Promise.all([reportes(new Date(Date.now() - 864e5)), revisiones(new Date(Date.now() - 864e5))]); }
-    catch { $('g-estado-red').innerHTML = '<span class="sin-red">SIN CONEXIÓN · revisa el internet</span>'; return; }
-    $('g-estado-red').textContent = `En línea · actualizado ${horaCorta(new Date().toISOString())}`;
-    const activos = xs.filter((r) => !ES_CIERRE(r.estado));
-    const nuevos = activos.filter((r) => r.estado === 'enviado');
+    let xs: Reporte[], vs: Revision[], m: Mando | null;
+    try { [xs, vs, m] = await Promise.all([reportes(new Date(Date.now() - 864e5)), revisiones(new Date(Date.now() - 864e5)), mando().catch(() => null)]); }
+    catch { $('tb-red').innerHTML = '<span class="tb-sin-red">SIN CONEXIÓN · revisa el internet</span>'; return; }
+    if (!document.getElementById('tb-kpis')) return;
+    $('tb-red').innerHTML = `<i class="tb-punto"></i> En línea · ${horaCorta(new Date().toISOString())}`;
+    const activos = xs.filter((r) => !ES_CIERRE(r.estado)), nuevos = activos.filter((r) => r.estado === 'enviado');
     if (nuevos.length && activado) alarma.iniciar(); else alarma.parar();
-    document.title = nuevos.length ? `(${nuevos.length}) NUEVO · SIMUB` : 'SIMUB · Guardia';
+    document.title = nuevos.length ? `(${nuevos.length}) NUEVO · SIMUB` : 'SIMUB · Tablero de guardia';
+    const g = m?.guardia, uds = m?.unidades ?? [], servs = m?.servicios ?? [];
+    $('tb-turno').innerHTML = g ? `<em class="tb-pill ${g.turno === 'dia' ? 'tb-dia' : 'tb-noche'}">Turno de ${g.turno === 'dia' ? 'día' : 'noche'}</em>
+      <span>Jefe de guardia <b>${esc(g.jefe ?? 'sin registrar')}</b> · ${g.personal.length} en pase de lista</span>` : '';
+    const disp = uds.filter((u) => u.estado === 'disponible').length, enSv = uds.filter((u) => u.estado === 'en_servicio').length, fuera = uds.filter((u) => u.estado === 'fuera_servicio').length;
+    const kpi = (etq: string, v: string, cls = '', sub = '') => `<div class="tb-kpi ${cls}"><span>${etq}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+    $('tb-kpis').innerHTML = kpi('Reportes sin ver', String(nuevos.length), nuevos.length ? 'alerta' : 'ok', nuevos.length ? 'Toca «Enterado»' : 'Todo atendido')
+      + kpi('Servicios activos', String(servs.length), servs.length ? 'activo' : '', `${m?.hoy ?? 0} servicios hoy`)
+      + kpi('Unidades disponibles', `${disp}/${uds.length}`, disp === 0 ? 'alerta' : disp <= 2 ? 'aviso' : 'ok', `${enSv} en servicio · ${fuera} fuera`)
+      + kpi('Riesgo de incendio', riesgo?.txt ?? '—', `riesgo ${riesgo?.cls ?? ''}`, riesgo ? `${riesgo.n} de 3 condiciones` : '')
+      + kpi('Oficiales en mapa', String((m?.posiciones ?? []).filter((p) => p.tipo === 'oficial').length), '', `${(m?.posiciones ?? []).length} posiciones en vivo`);
+    // reportes de la app
+    $('tb-n-rep').textContent = activos.length ? String(activos.length) : '';
     $('g-lista').innerHTML = activos.length ? activos.map((r) => {
-      const f = FORMULARIOS[r.tipo], m = minutos(r.creado_en);
-      const nivel = r.estado !== 'enviado' ? '' : m >= 10 ? 'rojo' : m >= 5 ? 'ambar' : 'verde';
-      return `<article class="g-tarjeta ${r.estado === 'enviado' ? 'nuevo' : ''}" style="--c:${f.color}">
-        <span class="g-ic" style="background:${f.color}">${I[r.tipo](30)}</span>
-        <div class="g-info"><b>${esc(f.nombre)}</b><span>${esc(r.folio)} · ${horaCorta(r.creado_en)}${r.referencia ? ` · ${esc(r.referencia)}` : ''}</span>
-          <span class="g-res">${esc((r.detalles.resumen ?? []).slice(0, 2).join(' · '))}</span></div>
-        <div class="g-der"><span class="g-min ${nivel}">${m} min</span><em class="pill ${ESTADO[r.estado].cls}">${ESTADO[r.estado].txt}</em>
-          ${r.estado === 'enviado' ? `<button class="btn g-enterado" data-ent="${r.id}">Enterado</button>` : ''}</div></article>`;
-    }).join('') : `<div class="g-vacio">${I.check(48)}<b>Sin reportes activos</b><span>La alarma sonará cuando llegue uno nuevo.</span></div>`;
-    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-    const cerradosHoy = xs.filter((r) => ES_CIERRE(r.estado) && new Date(r.actualizado_en) >= hoy).length;
-    const sinParte = xs.filter((r) => r.estado === 'cerrado' && !r.tiene_parte).length;
-    const porAgendar = vs.filter((v) => v.estado === 'solicitada').length;
-    const proximas = vs.filter((v) => v.estado === 'confirmada' && v.fecha && new Date(v.fecha) > new Date()).sort((a, b) => a.fecha!.localeCompare(b.fecha!));
-    $('g-pie').innerHTML = `<span><b>${activos.length}</b> activos</span><span><b>${cerradosHoy}</b> cerrados hoy</span>
-      <span class="${sinParte ? 'pendiente' : ''}"><b>${sinParte}</b> sin parte de servicio</span>
-      <span class="${porAgendar ? 'pendiente' : ''}"><b>${porAgendar}</b> revisiones por agendar</span>
-      ${proximas[0] ? `<span>Próxima revisión: <b>${fecha(proximas[0].fecha!)}</b>${proximas[0].asignado ? ` · ${esc(proximas[0].asignado)}` : ''}</span>` : ''}`;
-    capa.clearLayers();
-    const pts: L.LatLngTuple[] = [];
-    for (const r of activos) { L.marker([r.lat, r.lon], { icon: pinTipo(r) }).addTo(capa).bindTooltip(`${FORMULARIOS[r.tipo].nombre} · ${r.folio}`); pts.push([r.lat, r.lon]); }
+      const f = FORMULARIOS[r.tipo], mi = minutos(r.creado_en);
+      const nivel = r.estado !== 'enviado' ? '' : mi >= 10 ? 'rojo' : mi >= 5 ? 'ambar' : 'verde';
+      return `<article class="tb-rep ${r.estado === 'enviado' ? 'nuevo' : ''}" style="--c:${f.color}">
+        <span class="tb-ic" style="background:${f.color}">${I[r.tipo](26)}</span>
+        <div class="tb-info"><b>${esc(f.nombre)}</b><span>${esc(r.folio)} · ${horaCorta(r.creado_en)}${r.referencia ? ` · ${esc(r.referencia)}` : ''}</span>
+          <small>${esc((r.detalles.resumen ?? []).slice(0, 2).join(' · '))}</small></div>
+        <div class="tb-der"><span class="tb-min ${nivel}">${mi}<small>min</small></span><em class="pill ${ESTADO[r.estado].cls}">${ESTADO[r.estado].txt}</em>
+          ${r.estado === 'enviado' ? `<button class="btn tb-enterado" data-ent="${r.id}">Enterado</button>` : ''}</div></article>`;
+    }).join('') : `<div class="tb-vacio">${I.check(34)}<b>Sin reportes activos</b><span>La sirena sonará con el siguiente.</span></div>`;
+    // servicios activos
+    $('tb-n-serv').textContent = servs.length ? String(servs.length) : '';
+    $('tb-serv').innerHTML = servs.length ? servs.map((sv) => {
+      const mi = minutos(sv.h_reporte ?? sv.creado_en), sig = HITO_SIG.find(([k]) => !sv[k]);
+      const t = mi < 60 ? `${mi}<small>min</small>` : `${Math.floor(mi / 60)}<small>h</small>${String(mi % 60).padStart(2, '0')}`;
+      const cl = CATN[sv.clasificacion];
+      return `<article class="tb-sv ${mi >= 120 ? 'largo' : ''}" style="--c:${cl?.color ?? '#888'}"><div class="tb-sv-cab"><b>#${sv.folio}</b><span class="tb-sv-cls">${sv.falsa_alarma ? 'FALSA ALARMA · ' : ''}${esc(cl?.nombre ?? sv.clasificacion)}</span><span class="tb-min">${t}</span></div>
+        <div class="tb-sv-lugar">${esc([sv.colonia, sv.lugar].filter(Boolean).join(', ') || 'Sin lugar')}</div>
+        <div class="tb-sv-pie">${sv.unidades.map((u) => `<i class="tb-u">${esc(u)}</i>`).join('') || '<i class="tb-u sin">Sin unidad</i>'}
+          <span class="tb-estado">${sig ? sig[1] : 'En base'}</span>${(sv.enviado_oficial ?? []).length ? `<span class="tb-ok">✔ ${esc(sv.enviado_oficial!.join(', '))}</span>` : '<span class="tb-falta">Sin oficial</span>'}</div></article>`;
+    }).join('') : `<div class="tb-vacio"><b>Sin servicios activos</b></div>`;
+    // unidades
+    $('tb-unid').innerHTML = uds.map((u) => `<div class="tb-unidad ${u.estado}" title="${esc(u.tipo ?? '')}"><b>${esc(u.nombre)}</b><small>${u.estado === 'en_servicio' ? `#${u.folio ?? ''}` : u.estado === 'fuera_servicio' ? 'Fuera' : 'Lista'}</small></div>`).join('')
+      || '<div class="tb-sin">Sin unidades registradas</div>';
+    // pendientes
+    const al = m?.alertas, porAgendar = vs.filter((v) => v.estado === 'solicitada').length;
+    const prox = vs.filter((v) => v.estado === 'confirmada' && v.fecha && new Date(v.fecha) > new Date()).sort((p, q) => p.fecha!.localeCompare(q.fecha!))[0];
+    const avisos: string[] = [];
+    if (al?.sin_inspeccion.length) avisos.push(`<li class="aviso"><b>${al.sin_inspeccion.length}</b> unidad(es) sin revisión este turno: ${esc(al.sin_inspeccion.join(', '))}</li>`);
+    if (al?.sin_firma) avisos.push(`<li class="aviso"><b>${al.sin_firma}</b> parte(s) sin firma de más de 24 h</li>`);
+    if (al?.caducidades.length) avisos.push(`<li><b>${al.caducidades.length}</b> artículo(s) caducan en 30 días</li>`);
+    if (al?.mantenimiento.length) avisos.push(`<li>Mantenimiento próximo: ${esc(al.mantenimiento.map((x) => x.unidad).join(', '))}</li>`);
+    if (porAgendar) avisos.push(`<li class="aviso"><b>${porAgendar}</b> revisión(es) de seguridad por agendar</li>`);
+    if (prox) avisos.push(`<li>Próxima revisión: <b>${fecha(prox.fecha!)}</b>${prox.asignado ? ` · ${esc(prox.asignado)}` : ''}</li>`);
+    $('tb-avisos').innerHTML = avisos.join('') || '<li class="ok">Sin pendientes</li>';
+    // mapas
+    capa.clearLayers(); capaServ.clearLayers(); capa2.clearLayers();
+    const pts: L.LatLngTuple[] = [], pts2: L.LatLngTuple[] = [];
+    for (const r of activos) { L.marker([r.lat, r.lon], { icon: pinTipo(r) }).addTo(capa).bindTooltip(`${FORMULARIOS[r.tipo].nombre} · ${esc(r.folio)}`); pts.push([r.lat, r.lon]); }
+    for (const sv of servs.filter((x) => x.lat != null)) {
+      L.circleMarker([sv.lat!, sv.lon!], { radius: 11, color: '#fff', weight: 3, fillColor: '#E0453A', fillOpacity: .95 }).addTo(capaServ).bindTooltip(`Servicio #${sv.folio} · ${esc(sv.colonia ?? '')}`);
+      L.circleMarker([sv.lat!, sv.lon!], { radius: 8, color: '#E0453A', weight: 2, fillOpacity: 0 }).addTo(capa2).bindTooltip(`Servicio #${sv.folio}`);
+      pts.push([sv.lat!, sv.lon!]); pts2.push([sv.lat!, sv.lon!]);
+    }
+    for (const p of m?.posiciones ?? []) {
+      const of = p.tipo === 'oficial', mi = Math.round((Date.now() - +new Date(p.en)) / 60000);
+      L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', iconSize: [80, 24], iconAnchor: [40, 12],
+        html: `<span class="pin-unidad ${of ? 'oficial' : ''} ${mi > 10 ? 'viejo' : ''}">${esc(p.unidad)}</span>` }) }).addTo(capa2)
+        .bindPopup(`<b>${esc(p.unidad)}</b>${p.autor ? `<br>${esc(p.autor)}` : ''}<br>${p.folio ? `Servicio #${p.folio}${p.clase ? ` · ${esc(p.clase)}` : ''}` : 'Sin servicio asignado'}<br><small>Hace ${mi} min${p.precision_m ? ` · ±${p.precision_m} m` : ''}</small>`);
+      pts2.push([p.lat, p.lon]);
+    }
+    const e = document.getElementById('g-terr-n'); if (e) e.textContent = `${(m?.posiciones ?? []).length} en vivo`;
     if (pts.length && primeraVez) { mapa?.fitBounds(L.latLngBounds(pts).pad(0.4), { maxZoom: 15 }); primeraVez = false; }
+    if (pts2.length && primera2) { mapa2?.fitBounds(L.latLngBounds(pts2).pad(0.3), { maxZoom: 15 }); primera2 = false; }
     raiz.querySelectorAll<HTMLButtonElement>('[data-ent]').forEach((b) => b.addEventListener('click', async () => {
       b.disabled = true; b.textContent = 'Marcando…';
-      try { await accion({ accion: 'estado', reporte: b.dataset.ent, estado: 'visto' }); aviso('Marcado como visto. Ya se le avisó a quien reportó.'); }
-      catch (e) { aviso(ERRORES[(e as Error).message] ?? 'No se pudo marcar.', true); }
+      try { await accion({ accion: 'estado', reporte: b.dataset.ent, estado: 'visto' }); aviso('Marcado como visto. Ya se le avisó a quien reportó.'); avisarVentanas(); }
+      catch (err) { aviso(ERRORES[(err as Error).message] ?? 'No se pudo marcar.', true); }
       cargar();
     }));
   };

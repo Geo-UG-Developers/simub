@@ -154,6 +154,7 @@ const guardarAuto = (a: Auto) => { try { localStorage.setItem(AUTO, JSON.stringi
 
 /** Si esta computadora tiene copia automática y ya toca, la descarga sola (en Descargas o la carpeta que use Chrome). */
 export async function copiaAutomatica(c: Ctx) {
+  if (c.rol() !== 'admin') return;   // la copia completa solo la descarga el Admin. Maestro
   const a = leerAuto(); if (a.frecuencia === 'no') return;
   const dias = { diaria: 1, semanal: 7, mensual: 30 }[a.frecuencia];
   if (a.ultima && Date.now() - new Date(a.ultima).getTime() < dias * 864e5 - 36e5) return;

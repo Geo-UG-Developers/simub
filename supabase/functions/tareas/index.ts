@@ -30,6 +30,20 @@ Deno.serve(async () => {
   try { r.avisos = await enviarAvisos(); } catch (e) { console.error('avisos', e); }
   try { r.noticias = await avisarNoticias(); } catch (e) { console.error('noticias', e); }
   try { r.resumen = await resumenTurno(); } catch (e) { console.error('resumen turno', e); }
+  // Eventos sensibles del control interno: aviso privado a los Admin. Maestro vinculados al bot.
+  try {
+    const { data: ev } = await db.rpc('auditoria_por_avisar');
+    const lista = (ev ?? []) as { quien: string | null; accion: string; registro: string | null; en: string }[];
+    if (lista.length) {
+      const { data: admins } = await db.rpc('admins_telegram');
+      const TXT: Record<string, string> = { respaldo_descargado: 'descargó la copia completa del año', cuenta_borrada: 'borró una cuenta del panel',
+        cuenta_cambiada: 'cambió una cuenta (rol o contraseña)', auditoria_borrada: 'borró registros del control interno', persona_borrada: 'borró a una persona del personal',
+        edicion_autorizada: 'autorizó corregir un parte cerrado', acceso_desbloqueado: 'desbloqueó una cuenta' };
+      const texto = '🔐 <b>Control interno SIMUB</b>\n' + lista.slice(0, 15).map((x) =>
+        `• ${new Date(x.en).toLocaleString('es-MX', { timeZone: 'America/Mexico_City', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} · ${(x.quien ?? 'sistema').replace(/[<>&]/g, '')} ${TXT[x.accion] ?? x.accion}`).join('\n');
+      for (const chat of (admins as number[] | null) ?? []) await tg('sendMessage', { chat_id: chat, text: texto, parse_mode: 'HTML' });
+    }
+  } catch (e) { console.error('avisos de control interno', e); }
   // Solicitudes de voluntariado: aviso breve al grupo de comunicación (sin teléfono ni correo).
   try {
     const { data } = await db.rpc('voluntarios_por_avisar');
