@@ -4,25 +4,21 @@ Using access token from env var...
 Supabase CLI 2.122.0
 Using profile: supabase (supabase.co)
 Using access token from env var...
-2026/11/27 11:12:47 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
-2026/11/27 11:12:47 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
-2026/11/27 11:12:48 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
-2026/11/27 11:12:48 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
-2026/11/27 11:12:48 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
-2026/11/27 11:12:49 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
-2026/11/27 11:12:49 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
+2026/11/27 13:33:17 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj
+2026/11/27 13:33:18 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/api-keys
+2026/11/27 13:33:19 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/storage
+2026/11/27 13:33:19 HTTP GET: https://api.supabase.com/v1/projects/mgvlvqhnnfhaytjkrtqj/config/database/pooler
+2026/11/27 13:33:19 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/rest/v1/
+2026/11/27 13:33:19 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/auth/v1/health
+2026/11/27 13:33:19 HTTP GET: https://mgvlvqhnnfhaytjkrtqj.supabase.co/storage/v1/version
 Finished supabase link.
 A new version of Supabase CLI is available: v3.4.0 (currently installed v2.122.0)
 We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli
 Connecting to remote database...
 Do you want to push these migrations to the remote database?
- • 20261127000100_rol_campo.sql
- • 20261127000200_operacion.sql
- • 20261127000300_oficiales_acceso.sql
+ • 20261128000100_ajustes_cuentas.sql
  [Y/n] y
-Applying migration 20261127000100_rol_campo.sql...
-Applying migration 20261127000200_operacion.sql...
-Applying migration 20261127000300_oficiales_acceso.sql...
+Applying migration 20261128000100_ajustes_cuentas.sql...
 Seed files are up to date.
 Finished supabase db push.
 A new version of Supabase CLI is available: v3.4.0 (currently installed v2.122.0)
