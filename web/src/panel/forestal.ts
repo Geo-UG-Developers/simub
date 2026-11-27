@@ -13,7 +13,7 @@ const h = (f?: string | null) => f ? new Date(f).toLocaleString('es-MX', { day: 
 
 export async function vistaForestal(c: Ctx) {
   const anio = new Date().getFullYear();
-  c.marco('forestal', 'Incendios forestales y de pastizal', 'Riesgo del día, focos de calor detectados por satélite y áreas afectadas.',
+  c.marco('forestal', 'Incendios', 'Riesgo del día, focos de calor detectados por satélite y áreas afectadas.',
     `<div class="rejilla-graf"><section class="tarjeta" id="fo-clima"><p class="tenue">Cargando clima…</p></section>
       <section class="tarjeta"><h3>Focos de calor (satélite, últimas 48 h)</h3><div id="fo-firms" class="tenue">Consultando…</div></section></div>
      <section class="tarjeta"><h3>Mapa</h3><div id="fo-mapa" class="mapa-op"></div>

@@ -3,7 +3,7 @@
 //  · Grupo de comunicación: /noticia, /destacar, /ocultar, /necesidades (sin programar nada).
 //  · Cualquier grupo: /id, /vincular CÓDIGO (solo administradores), /ayuda.
 import { db, rolDeChat, secretoWebhook, tg, tgArchivo } from '../_shared/servicios.ts';
-import { avisarServicio, ubicacionOficial } from '../_shared/servicio_tg.ts';
+import { avisarServicio, invitarAGrupos, ubicacionOficial, vincularPorTelefono } from '../_shared/servicio_tg.ts';
 import {
   CATEGORIA, ES_CIERRE, ETIQUETA_ESTADO, ETIQUETA_TIPO, escapar, leerBoton, leerComando, tecladoConfirmar, type Estado,
 } from '../_shared/mensajes.ts';
@@ -43,6 +43,10 @@ Deno.serve(async (req) => {
     const priv = (u.message ?? u.edited_message)?.chat?.type === 'private';
     if (loc && priv) { await ubicacionOficial((u.message ?? u.edited_message).chat.id, loc.latitude, loc.longitude, loc.horizontal_accuracy); return new Response('ok'); }
     if (u.edited_message) return new Response('ok');
+    if (u.message?.migrate_to_chat_id) {   // el grupo pasó a «supergrupo»: se conserva su vinculación con el número nuevo
+      await db.from('chats').update({ chat_id: u.message.migrate_to_chat_id }).eq('chat_id', u.message.chat.id);
+      return new Response('ok');
+    }
     if (u.message) await mensaje(u.message);
     else if (u.callback_query) await boton(u.callback_query);
   } catch (e) { console.error('webhook', e); }
@@ -80,6 +84,22 @@ async function mensaje(m: Msg) {
     const r = await rolDeChat(chat);
     return responder(`El número de este chat es <code>${chat}</code>.\n` +
       (r ? `Este grupo está vinculado como <b>${NOMBRE_ROL[r] ?? r}</b>.` : 'Este grupo todavía <b>no está vinculado</b> a SIMUB.'));
+  }
+  // ---- alta automática por número de teléfono (un solo enlace para todo el personal: t.me/SimubGtoBot?start=alta)
+  // deno-lint-ignore no-explicit-any
+  const contacto = (m as any).contact;
+  if (contacto && m.chat.type === 'private') {
+    if (contacto.user_id !== user) return responder('Comparte <b>tu propio</b> número con el botón «Compartir mi número».');
+    const p = await vincularPorTelefono(chat, contacto.phone_number ?? '');
+    if (!p) return responder('Tu número no está en la lista del personal de SIMUB. Pide al Admin. Maestro que te registre con este teléfono y vuelve a intentarlo.', { reply_markup: { remove_keyboard: true } });
+    await responder(`Listo, <b>${p.nombre}</b>: quedaste vinculado. Cabina ya puede enviarte servicios por aquí y te mando tus invitaciones a los grupos.`, { reply_markup: { remove_keyboard: true } });
+    const inv = await invitarAGrupos([p.id]);
+    if (inv.some((x) => !x.enlace)) await responder('Alguna invitación no se pudo crear todavía; el Admin. Maestro te la enviará.');
+    return;
+  }
+  if (m.chat.type === 'private' && ((c?.comando === 'start' && /^alta$/i.test(c.arg ?? '')) || c?.comando === 'alta')) {
+    return responder('Para quedar dado de alta en SIMUB, toca el botón de abajo y comparte <b>tu número</b>. Solo se usa para reconocerte en la lista del personal.', {
+      reply_markup: { keyboard: [[{ text: '📱 Compartir mi número', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
   }
   if (c?.comando === 'start' && m.chat.type === 'private' && /^OF[A-Z0-9]+$/i.test(c.arg ?? '')) {
     const { data, error } = await db.rpc('vincular_oficial', { p_codigo: c.arg!.slice(2), p_chat: chat });

@@ -17,6 +17,13 @@ export async function tg(metodo: string, cuerpo: Record<string, unknown>): Promi
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cuerpo),
   });
   const j = await r.json().catch(() => ({ ok: false, description: `http ${r.status}` }));
+  // Al hacer administrador al bot (o al crecer el grupo) Telegram convierte el grupo en «supergrupo» y le cambia el número.
+  // Se actualiza solo y se reintenta, para que nadie tenga que volver a vincular.
+  const nuevo = j?.parameters?.migrate_to_chat_id;
+  if (!j.ok && nuevo && cuerpo.chat_id != null && cuerpo.chat_id !== nuevo) {
+    await db.from('chats').update({ chat_id: nuevo }).eq('chat_id', cuerpo.chat_id);
+    return tg(metodo, { ...cuerpo, chat_id: nuevo });
+  }
   if (!j.ok) console.error(`telegram ${metodo}`, j.description);
   return j;
 }

@@ -52,7 +52,8 @@ export async function vistaMapa(c: Ctx) {
         <br><a href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}" target="_blank" rel="noopener">Cómo llegar</a>
         ${edita ? ` · <a href="#" data-editar="${p.id}">Editar</a> · <a href="#" data-quitar="${p.id}">Quitar</a>` : ''}`);
     }
-    $('mp-cuenta').textContent = `${xs.length} puntos registrados.`;
+    $('mp-cuenta').innerHTML = xs.length ? `${xs.length} puntos registrados.`
+      : `<b>Aún no hay puntos.</b> Estas capas las llena la estación: ${edita ? 'toca el mapa en el lugar exacto y elige el tipo (hidrante, toma de agua, acceso, preplán…).' : 'el Admin. Maestro o coordinación los agregan tocando el mapa.'} Los puntos rojos y las etiquetas de unidades sí salen solos del Centro de mando.`;
   };
   const enVivo = async () => {
     const m = await mando().catch(() => null); if (!m) return; vivo.clearLayers();

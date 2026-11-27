@@ -212,7 +212,7 @@ const SECCIONES: { id: string; txt: string; ic: (n: number) => string; roles?: s
   { id: 'servicios', txt: 'Servicios y partes', ic: I.lista, roles: ['admin', 'coordinador', 'guardia'] },
   { id: 'unidades', txt: 'Unidades y equipo', ic: I.caja },
   { id: 'mapa', txt: 'Mapa operativo', ic: I.pin },
-  { id: 'forestal', txt: 'Incendios forestales', ic: I.incendio, roles: ['admin', 'coordinador', 'guardia'] },
+  { id: 'forestal', txt: 'Incendios', ic: I.incendio, roles: ['admin', 'coordinador', 'guardia'] },
   { id: 'herramientas', txt: 'Herramientas', ic: I.gps },
   { id: 'agenda', txt: 'Revisiones', ic: I.calendario, roles: ['admin', 'coordinador', 'guardia'] },
   { id: 'informe', txt: 'Informes', ic: I.noticias, roles: ['admin'] },

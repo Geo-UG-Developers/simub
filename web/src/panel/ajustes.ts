@@ -254,23 +254,32 @@ const PINTORES: Record<string, Pintor> = {
     cont.innerHTML = `<section class="tarjeta"><h3>1. Vincular cada grupo (una sola vez)</h3>
         <p class="tenue chica">Agrega a <b>@SimubGtoBot</b> al grupo <b>como administrador</b> (con permiso de «Invitar usuarios»). Luego un administrador del grupo escribe <code>/vincular CÓDIGO</code> dentro del grupo.</p>
         <table class="tabla"><tbody>${cods.map((x) => `<tr><td>${ROL_CHAT[x.rol] ?? x.rol}</td><td><code>${esc(x.codigo)}</code></td><td>${x.vinculado ? '<em class="pill p-verde">Vinculado</em>' : '<em class="pill p-gris">Sin vincular</em>'}</td></tr>`).join('')}</tbody></table></section>
-      <h3 class="aj-sub">2. Invitar al personal a cada grupo</h3>
+      <section class="tarjeta aj-alta-bot"><h3>2. Alta automática del personal en el bot (un solo enlace para todos)</h3>
+        <p>Comparte este enlace <b>una sola vez</b> en el grupo de WhatsApp de la estación (o donde estén todos). Cada persona lo abre, toca <b>«Compartir mi número»</b> y el bot
+          la reconoce por su teléfono registrado en «Oficiales y personal». En ese momento queda vinculada (ya puede recibir servicios de «Enviar a oficial») y le llegan
+          <b>solas</b> las invitaciones a los grupos que le tocan. No hay que guardar contactos ni enviar uno por uno.</p>
+        <div class="fila-btn"><code id="alta-url">https://t.me/SimubGtoBot?start=alta</code>
+          <a class="btn primario" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('Personal de SIMUB: abran este enlace en su celular con Telegram, toquen «Iniciar» y luego «Compartir mi número» para quedar dados de alta en el sistema y recibir los servicios de cabina: https://t.me/SimubGtoBot?start=alta')}">Compartir por WhatsApp</a>
+          <button class="btn" type="button" id="alta-copiar">Copiar</button></div>
+        <p class="tenue chica">Solo funciona con el número que tengan registrado aquí. Quien comparta un número que no está en la lista no queda dado de alta.</p></section>
+      <h3 class="aj-sub">3. Invitar al personal a cada grupo (manual, si hace falta)</h3>
       ${caja('alertas', 'Grupo de reportes de la app', 'Reportes App', mg.alertas)}${caja('interno', 'Grupo de comunicación interna', 'Comunicación interna', mg.interno)}`;
+    cont.querySelector('#alta-copiar')?.addEventListener('click', async () => { try { await navigator.clipboard.writeText('https://t.me/SimubGtoBot?start=alta'); c.aviso('Enlace copiado.'); } catch { /* */ } });
     cont.querySelectorAll<HTMLFormElement>('[data-inv]').forEach((f) => f.addEventListener('submit', async (e) => {
       e.preventDefault(); const rol = f.dataset.inv as 'alertas' | 'interno'; const ids = new FormData(f).getAll('p').map(Number);
       if (!ids.length) return c.aviso('Marca al menos a una persona.', true);
       const b = f.querySelector<HTMLButtonElement>('button.primario')!; b.disabled = true; b.textContent = 'Enviando…';
       try {
-        const r = await invitarGrupo(rol, ids); const xs = [...mg.alertas, ...mg.interno];
+        const r = await invitarGrupo(rol, ids);
         cont.querySelector<HTMLElement>(`[data-res="${rol}"]`)!.innerHTML = `<div class="bloque"><b>Invitaciones</b><ul class="aj-inv">${r.resultado.map((x) => {
           const tel = tel10(x.telefono ?? ''); const msg = `Hola ${x.nombre}: te invitan al grupo de SIMUB. Enlace personal, sirve una vez (7 días): ${x.enlace}`;
           return `<li><b>${esc(x.nombre)}</b> · ${x.enviado ? '<span class="ok-txt">enviada por Telegram</span>'
             : x.enlace ? (tel.length === 10 ? `<a class="btn chico primario" target="_blank" rel="noopener" href="https://wa.me/52${tel}?text=${encodeURIComponent(msg)}">Enviar por WhatsApp</a>` : `<code>${esc(x.enlace)}</code>`)
             : '<span class="alerta-txt">no se pudo crear</span>'}</li>`; }).join('')}</ul></div>`;
-        void xs; b.disabled = false; b.textContent = 'Enviar invitaciones a los marcados';
+        b.disabled = false; b.textContent = 'Enviar invitaciones a los marcados';
       } catch (err) {
         const m = (err as Error).message;
-        c.aviso(m === 'sin_grupo' ? 'Primero vincula el grupo.' : m === 'bot_sin_permiso' ? 'El bot no es administrador del grupo o no tiene permiso de invitar.' : 'No se pudieron enviar.', true);
+        c.aviso(m === 'sin_grupo' ? 'Primero vincula el grupo.' : m === 'bot_sin_permiso' ? 'El bot no es administrador del grupo o le falta el permiso «Invitar usuarios mediante enlace». Actívalo en Telegram y vuelve a intentar.' : 'No se pudieron enviar.', true);
         b.disabled = false; b.textContent = 'Enviar invitaciones a los marcados';
       }
     }));

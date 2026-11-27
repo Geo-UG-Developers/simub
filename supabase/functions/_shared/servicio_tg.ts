@@ -158,3 +158,41 @@ export async function resumenTurno(): Promise<boolean> {
   ].join('\n') });
   return true;
 }
+
+const NOM_GRUPO: Record<string, string> = { alertas: 'Reportes de la app SIMUB', interno: 'Comunicación interna SIMUB' };
+export type ResInvitacion = { nombre: string; grupo: string; enlace: string | null; enviado: boolean; telefono: string | null };
+/** Invitación personal de un solo uso (7 días) a cada grupo que le toca; si ya está vinculada al bot, se la manda por Telegram. */
+export async function invitarAGrupos(ids: number[], grupos: ('alertas' | 'interno')[] | null = null): Promise<ResInvitacion[]> {
+  const { data: ps } = await db.from('personal').select('id, nombre, nombre_corto, telefono, tg_chat_id, reportes_app, comunicacion_interna').in('id', ids);
+  const res: ResInvitacion[] = [];
+  for (const p of ps ?? []) {
+    const nombre = p.nombre_corto ?? p.nombre;
+    const suyos = (grupos ?? (['alertas', 'interno'] as const).filter((g) => g === 'alertas' ? p.reportes_app : p.comunicacion_interna));
+    for (const g of suyos) {
+      const chat = await chatDe(g); if (!chat) { res.push({ nombre, grupo: g, enlace: null, enviado: false, telefono: p.telefono }); continue; }
+      const r = await tg('createChatInviteLink', { chat_id: chat, name: nombre.slice(0, 32), member_limit: 1, expire_date: Math.floor(Date.now() / 1000) + 7 * 86400 });
+      const enlace: string | null = r.ok ? r.result.invite_link : null;
+      let enviado = false;
+      if (enlace && p.tg_chat_id) {
+        const m = await tg('sendMessage', { chat_id: p.tg_chat_id, text: `Te invitan al grupo «${NOM_GRUPO[g]}». El enlace es personal y sirve una sola vez (7 días):`,
+          reply_markup: { inline_keyboard: [[{ text: `Unirme a ${NOM_GRUPO[g]}`, url: enlace }]] } });
+        enviado = Boolean(m.ok);
+      }
+      res.push({ nombre, grupo: g, enlace, enviado, telefono: p.telefono });
+    }
+  }
+  return res;
+}
+
+/** Alta automática: la persona comparte SU número con el bot y queda vinculada si coincide con un teléfono del personal. */
+export async function vincularPorTelefono(chat: number, telefono: string): Promise<{ nombre: string; id: number } | null> {
+  const diez = telefono.replace(/\D/g, '').slice(-10);
+  if (diez.length !== 10) return null;
+  const { data: ps } = await db.from('personal').select('id, nombre, nombre_corto, telefono').eq('activo', true).not('telefono', 'is', null);
+  const p = (ps ?? []).find((x) => String(x.telefono).replace(/\D/g, '').slice(-10) === diez);
+  if (!p) return null;
+  await db.from('personal').update({ tg_chat_id: null }).eq('tg_chat_id', chat).neq('id', p.id);
+  await db.from('personal').update({ tg_chat_id: chat }).eq('id', p.id);
+  await db.from('auditoria').insert({ quien: 'bot', accion: 'oficial_vinculado_telefono', tabla: 'personal', registro: String(p.id), detalle: { nombre: p.nombre } });
+  return { nombre: p.nombre_corto ?? p.nombre, id: p.id };
+}

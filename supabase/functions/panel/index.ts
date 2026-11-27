@@ -1,10 +1,10 @@
 // Acciones del panel que también tocan Telegram o los avisos:
 // cambiar estado / deshacer (mismas reglas que el bot) y notificar cambios en revisiones.
-import { chatDe, CORS, db, json, tg } from '../_shared/servicios.ts';
+import { chatDe, CORS, db, json } from '../_shared/servicios.ts';
 import { ES_CIERRE, escapar, fechaMx, type Estado } from '../_shared/mensajes.ts';
 import { actualizarAlerta, avisarRevision, datosAlerta, enviarAlerta, pedirParte, primeraFoto } from '../_shared/alerta.ts';
 import { enviarAvisos } from '../_shared/avisos.ts';
-import { avisarServicio, enviarInterno, enviarOficial, pedirApoyo } from '../_shared/servicio_tg.ts';
+import { avisarServicio, enviarInterno, enviarOficial, invitarAGrupos, pedirApoyo } from '../_shared/servicio_tg.ts';
 
 const ESTADOS: Estado[] = ['visto', 'en_camino', 'atendiendo', 'cerrado', 'falso'];
 
@@ -90,22 +90,8 @@ Deno.serve(async (req) => {
     const { data: yo } = await db.from('miembros_panel').select('rol, superusuario').eq('user_id', u.id).maybeSingle();
     if (yo?.rol !== 'admin' && !yo?.superusuario) return json({ error: 'solo_admin' }, 403);
     if (!['alertas', 'interno'].includes(b.grupo) || !Array.isArray(b.personas) || !b.personas.length) return json({ error: 'datos' }, 400);
-    const chat = await chatDe(b.grupo); if (!chat) return json({ error: 'sin_grupo' }, 409);
-    const NOM: Record<string, string> = { alertas: 'Reportes de la app SIMUB', interno: 'Comunicación interna SIMUB' };
-    const { data: ps } = await db.from('personal').select('id, nombre, nombre_corto, telefono, tg_chat_id').in('id', b.personas.map(Number));
-    const res: { nombre: string; enlace: string | null; enviado: boolean; telefono: string | null }[] = [];
-    for (const p of ps ?? []) {
-      const nombre = p.nombre_corto ?? p.nombre;
-      const r = await tg('createChatInviteLink', { chat_id: chat, name: nombre.slice(0, 32), member_limit: 1, expire_date: Math.floor(Date.now() / 1000) + 7 * 86400 });
-      const enlace: string | null = r.ok ? r.result.invite_link : null;
-      let enviado = false;
-      if (enlace && p.tg_chat_id) {
-        const m = await tg('sendMessage', { chat_id: p.tg_chat_id, text: `Te invitan al grupo «${NOM[b.grupo]}». El enlace es personal y sirve una sola vez (7 días):`,
-          reply_markup: { inline_keyboard: [[{ text: 'Unirme al grupo', url: enlace }]] } });
-        enviado = Boolean(m.ok);
-      }
-      res.push({ nombre, enlace, enviado, telefono: p.telefono });
-    }
+    if (!(await chatDe(b.grupo))) return json({ error: 'sin_grupo' }, 409);
+    const res = await invitarAGrupos(b.personas.map(Number), [b.grupo]);
     await db.from('auditoria').insert({ user_id: u.id, quien: actor, accion: 'invitaciones_grupo', tabla: 'chats', registro: b.grupo, detalle: { personas: res.map((x) => x.nombre) } });
     if (res.length && res.every((x) => !x.enlace)) return json({ error: 'bot_sin_permiso' }, 409);
     return json({ ok: true, resultado: res });

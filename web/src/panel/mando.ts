@@ -171,8 +171,9 @@ function enviarAOficial(c: Ctx, s: Servicio & { enviado_oficial?: string[] }, li
     if (!xs.length) { caja.innerHTML = '<p class="tenue">No hay personal marcado con «Comunicación interna». El Admin. Maestro lo marca en Ajustes › Personal.</p>'; return; }
     caja.innerHTML = `<p>Se envía <b>por mensaje privado de Telegram</b>: resumen, ubicación en Google Maps, folio, <b>nombre y teléfono de quien reporta</b>,
         botón para compartir su ubicación y enlace para llenar el parte.</p>
+      ${xs.some((o) => !o.vinculado) ? '<p class="tenue chica">Los que aparecen en gris aún no se dan de alta en el bot: deben abrir <b>t.me/SimubGtoBot?start=alta</b> y compartir su número (Ajustes › Grupos de Telegram).</p>' : ''}
       <form id="of-f"><div class="of-lista">${xs.map((o) => `<label class="of-item ${o.vinculado ? '' : 'sin'}"><input type="checkbox" name="of" value="${o.id}" ${o.vinculado ? '' : 'disabled'}
-        ${(s.enviado_oficial ?? []).includes(o.corto) ? 'data-ya="1"' : ''}><span><b>${esc(o.corto)}</b><small>${esc(o.nombre)}${o.vinculado ? '' : ' · aún no abre su enlace del bot'}</small></span>
+        ${(s.enviado_oficial ?? []).includes(o.corto) ? 'data-ya="1"' : ''}><span><b>${esc(o.corto)}</b><small>${esc(o.nombre)}${o.vinculado ? '' : ' · aún no se da de alta en el bot'}</small></span>
         ${(s.enviado_oficial ?? []).includes(o.corto) ? '<em class="pill p-verde">Ya enviado</em>' : ''}${o.comparte ? '<em class="pill p-dorado">En mapa</em>' : ''}</label>`).join('')}</div>
       <div class="fila-btn"><button class="btn primario" type="submit">Continuar</button><button class="btn" type="button" data-x>Cancelar</button></div></form>`;
     caja.querySelector('[data-x]')!.addEventListener('click', cerrar);
@@ -190,7 +191,7 @@ function enviarAOficial(c: Ctx, s: Servicio & { enviado_oficial?: string[] }, li
           const r = await enviarOficialD(s.id, ids);
           caja.innerHTML = `<div class="folio-ok">${I.check(40)}<b>${r.enviados.length ? 'Mensaje enviado' : 'No se envió'}</b>
             ${r.enviados.length ? `<p>Enviado por Telegram a: <b>${esc(r.enviados.join(', '))}</b>.</p>` : ''}
-            ${r.sin_telegram.length ? `<p class="alerta-txt">Sin Telegram vinculado: ${esc(r.sin_telegram.join(', '))}. Pídeles abrir su enlace del bot.</p>` : ''}
+            ${r.sin_telegram.length ? `<p class="alerta-txt">Sin Telegram vinculado: ${esc(r.sin_telegram.join(', '))}. Pídeles darse de alta con t.me/SimubGtoBot?start=alta (compartir su número).</p>` : ''}
             <button class="btn" data-x>Cerrar</button></div>`;
           caja.querySelector('[data-x]')!.addEventListener('click', cerrar); avisarVentanas(); listo();
         } catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo enviar. Revisa el internet.', true); b.disabled = false; b.textContent = 'Sí, enviar'; }
@@ -207,7 +208,7 @@ function enviarAInterno(c: Ctx, s: Servicio & { enviado_interno?: boolean }, lis
   fondo.querySelector<HTMLButtonElement>('#in-si')!.addEventListener('click', async (ev) => {
     const b = ev.currentTarget as HTMLButtonElement; b.disabled = true; b.textContent = 'Enviando…';
     try { await enviarInternoD(s.id); cerrar(); c.aviso('Enviado al grupo de comunicación interna.'); avisarVentanas(); listo(); }
-    catch (err) { c.aviso((err as Error).message === 'sin_grupo' ? 'Falta vincular el grupo de comunicación interna (Ajustes › Telegram).' : 'No se pudo enviar.', true); b.disabled = false; b.textContent = 'Sí, enviar al grupo'; }
+    catch (err) { c.aviso((err as Error).message === 'sin_grupo' ? 'Telegram no aceptó el mensaje. Intenta de nuevo; si sigue, escribe otra vez /vincular CÓDIGO dentro del grupo de comunicación interna (Ajustes › Grupos de Telegram).' : 'No se pudo enviar. Revisa el internet.', true); b.disabled = false; b.textContent = 'Sí, enviar al grupo'; }
   });
 }
 
