@@ -6,7 +6,7 @@ major_version = 15
 
 [db.seed]
 enabled = true
-sql_paths = ["./seed/00_base.sql", "./seed/90_demo.sql"]
+sql_paths = ["./seed/00_base.sql"]
 
 [functions.telegram]
 verify_jwt = false
@@ -24,4 +24,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.salud]
+verify_jwt = false
+
+[functions.acceso]
 verify_jwt = false

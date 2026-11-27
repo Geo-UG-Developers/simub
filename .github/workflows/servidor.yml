@@ -95,7 +95,7 @@ jobs:
             curl -s "$API/getMe"; echo
             echo "--- Webhook"
             curl -s "$API/setWebhook" -d "url=https://$PROJECT_REF.supabase.co/functions/v1/telegram" \
-              -d "secret_token=$SECRETO" --data-urlencode 'allowed_updates=["message","callback_query"]'; echo
+              -d "secret_token=$SECRETO" --data-urlencode 'allowed_updates=["message","edited_message","callback_query"]'; echo
             curl -s "$API/getWebhookInfo"; echo
           } | tee -a "$RUNNER_TEMP/registro.txt"
       - name: Guardar registro (para diagnóstico)

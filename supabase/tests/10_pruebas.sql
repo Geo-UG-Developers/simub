@@ -224,4 +224,81 @@ do $$ declare a jsonb; s1 bigint; s2 bigint; c jsonb; r jsonb; begin
   exception when others then perform pg_temp.ok(sqlerrm like '%violates check%', 'mayor de 18'); end;
 end $$;
 
+-- 14. Turnos, guardia, campo, escena, inspecciones y alertas
+do $$ declare a jsonb; b jsonb; c jsonb; e bigint; r jsonb; begin
+  perform pg_temp.ok(turno_de('2026-11-27 07:59:00-06') = 'noche' and turno_de('2026-11-27 08:00:00-06') = 'dia' and turno_de('2026-11-27 20:00:00-06') = 'noche', 'turnos por hora');
+  perform pg_temp.ok(fecha_turno('2026-11-28 03:00:00-06') = '2026-11-27', 'la madrugada pertenece a la noche anterior');
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');   -- cabina
+  r := panel_guardia_guardar('Laura Méndez', array['Laura Méndez', 'Juan Pérez']);
+  perform pg_temp.ok(r->>'jefe' = 'Laura Méndez', 'guardia del turno');
+  a := panel_guardar_servicio(null, '{"clasificacion":"inc_pastizal","colonia":"Marfil","unidades":["U-04"]}');
+  perform pg_temp.ok((select turno = turno_de(now()) and jefe_guardia = 'Laura Méndez' from servicios where id = (a->>'id')::uuid), 'servicio con turno y jefe de guardia');
+  insert into miembros_panel (user_id, rol, nombre, unidad) values ('77777777-7777-4777-8777-777777777777', 'campo', 'Unidad U-04', 'U-04') on conflict do nothing;
+  b := panel_guardar_servicio(null, '{"clasificacion":"acc_moto","unidades":["M-01"]}');
+  perform pg_temp.como('77777777-7777-4777-8777-777777777777');   -- celular de la U-04
+  c := panel_campo();
+  perform pg_temp.ok(jsonb_array_length(c->'servicios') = 1 and c->'servicios'->0->>'id' = a->>'id', 'campo ve solo su unidad');
+  perform panel_bitacora((a->>'id')::uuid, null, 'llegada', 21.01, -101.25);
+  perform pg_temp.ok((select lat from bitacora where servicio_id = (a->>'id')::uuid and texto = 'Llegada a la escena') = 21.01, 'hito con GPS');
+  perform panel_escena((a->>'id')::uuid, 'entra', 'Juan Pérez', 'Ataque');
+  select id into e from en_escena where servicio_id = (a->>'id')::uuid;
+  perform panel_escena((a->>'id')::uuid, 'aire', null, null, 45, e);
+  perform pg_temp.ok((select aire_min = 45 and aire_inicio is not null from en_escena where id = e), 'tiempo de aire');
+  perform panel_escena((a->>'id')::uuid, 'sale', null, null, null, e);
+  perform panel_servicio_parcial((a->>'id')::uuid, '{"perimetro":{"type":"Polygon","coordinates":[]},"area_afectada":"2.3 ha","recursos":{"agua_litros":800}}');
+  perform pg_temp.ok((select area_afectada = '2.3 ha' and (recursos->>'agua_litros')::int = 800 from servicios where id = (a->>'id')::uuid), 'datos de campo parciales');
+  perform panel_posicion('U-04', 21.0, -101.2, 10, (a->>'id')::uuid);
+  insert into inspecciones (unidad, checklist, fallas, critica) values ('M-02', '{"Frenos":"falla"}', '{Frenos}', true);
+  perform pg_temp.ok((select estado from unidades where nombre = 'M-02') = 'fuera_servicio', 'falla crítica saca la unidad de servicio');
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');
+  r := panel_alertas();
+  perform pg_temp.ok(jsonb_array_length(r->'sin_inspeccion') >= 1, 'alerta de unidades sin inspección');
+  r := panel_mando();
+  perform pg_temp.ok(jsonb_array_length(r->'posiciones') = 1 and r->'guardia'->>'jefe' = 'Laura Méndez', 'mando con posiciones y guardia');
+  r := resumen_turno(fecha_turno(now()), turno_de(now()));
+  perform pg_temp.ok((r->>'total')::int >= 2, 'resumen del turno: ' || r::text);
+  r := datos_servicio_tg((a->>'id')::uuid);
+  perform pg_temp.ok(r->>'clase' = 'INCENDIO PASTIZAL', 'datos para Telegram');
+end $$;
+
+-- 15. Oficiales, envíos, accesos con límite, permisos de Admin. Maestro y autorización de correcciones
+do $$ declare a jsonb; r jsonb; cod text; i int; v text; begin
+  -- límite de intentos de acceso
+  for i in 1..4 loop r := acceso_registrar('Prueba@Simub.mx', false); end loop;
+  perform pg_temp.ok((r->>'fallos')::int = 4 and acceso_estado('prueba@simub.mx')->>'bloqueado_hasta' is null, '4 fallos aún no bloquean');
+  r := acceso_registrar('prueba@simub.mx', false);
+  perform pg_temp.ok((r->>'bloqueado')::boolean and acceso_estado('prueba@simub.mx')->>'bloqueado_hasta' is not null, 'el 5.º fallo bloquea');
+  perform pg_temp.ok(exists (select 1 from auditoria where accion = 'acceso_bloqueado'), 'bloqueo en control interno');
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');   -- cabina
+  begin perform panel_desbloquear_acceso('prueba@simub.mx'); perform pg_temp.ok(false, 'cabina no desbloquea'); exception when insufficient_privilege then null; end;
+  perform pg_temp.ok(panel_conteos(2026) is null and panel_cuentas() = '[]'::jsonb, 'cabina no ve informes ni cuentas');
+  perform pg_temp.como('66666666-6666-4666-8666-666666666666');   -- admin
+  perform panel_desbloquear_acceso('prueba@simub.mx');
+  perform pg_temp.ok(acceso_estado('prueba@simub.mx')->>'bloqueado_hasta' is null and (acceso_estado('prueba@simub.mx')->>'fallos')::int = 0, 'admin desbloquea');
+  perform pg_temp.ok(panel_conteos(extract(year from now())::int) ? 'dias', 'informe con conteo por día');
+  -- oficiales
+  insert into personal (nombre, nombre_corto, comunicacion_interna, telefono) values ('Oficial de Prueba', 'O. Prueba', true, '4730000000') returning tg_codigo into cod;
+  r := panel_oficiales();
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r) x where x->>'nombre' = 'Oficial de Prueba' and x->>'enlace' like '%start=OF%'), 'lista de oficiales con enlace');
+  v := vincular_oficial(lower(cod), 900001);
+  perform pg_temp.ok(v = 'O. Prueba' and (select tg_chat_id from personal where nombre = 'Oficial de Prueba') = 900001, 'oficial vinculado al bot');
+  a := panel_guardar_servicio(null, '{"clasificacion":"inc_pastizal","colonia":"Centro","reportante":"Ana","telefono":"4731112233"}');
+  insert into envios (servicio_id, destino, personal_id, nombre, por) select (a->>'id')::uuid, 'oficial', id, 'O. Prueba', 'Admin' from personal where nombre = 'Oficial de Prueba';
+  r := panel_mando();
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r->'servicios') x where x->>'id' = a->>'id' and x->'enviado_oficial' ? 'O. Prueba'
+    and not (x->>'enviado_interno')::boolean), 'mando sabe a quién se envió');
+  -- corrección de un parte cerrado: cabina necesita autorización
+  perform panel_cerrar_servicio((a->>'id')::uuid);
+  update servicios set h_base = now() - interval '2 hours' where id = (a->>'id')::uuid;
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');
+  begin perform panel_guardar_servicio((a->>'id')::uuid, '{"observaciones":"cambio"}'); perform pg_temp.ok(false, 'cabina no corrige cerrado'); exception when insufficient_privilege then null; end;
+  begin perform panel_autorizar((a->>'id')::uuid, '44444444-4444-4444-8444-444444444444'); perform pg_temp.ok(false, 'cabina no se autoriza sola'); exception when insufficient_privilege then null; end;
+  perform pg_temp.como('66666666-6666-4666-8666-666666666666');
+  r := panel_autorizar((a->>'id')::uuid, '44444444-4444-4444-8444-444444444444');
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');
+  perform panel_guardar_servicio((a->>'id')::uuid, '{"observaciones":"corregido con autorización"}');
+  perform pg_temp.ok((select observaciones from servicios where id = (a->>'id')::uuid) = 'corregido con autorización', 'cabina corrige con autorización');
+  perform pg_temp.ok(exists (select 1 from auditoria where accion = 'edicion_autorizada'), 'autorización en control interno');
+end $$;
+
 \echo 'TODAS LAS PRUEBAS DE SIMUB PASARON'

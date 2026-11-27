@@ -3,6 +3,7 @@
 //  · Grupo de comunicación: /noticia, /destacar, /ocultar, /necesidades (sin programar nada).
 //  · Cualquier grupo: /id, /vincular CÓDIGO (solo administradores), /ayuda.
 import { db, rolDeChat, secretoWebhook, tg, tgArchivo } from '../_shared/servicios.ts';
+import { avisarServicio, ubicacionOficial } from '../_shared/servicio_tg.ts';
 import {
   CATEGORIA, ES_CIERRE, ETIQUETA_ESTADO, ETIQUETA_TIPO, escapar, leerBoton, leerComando, tecladoConfirmar, type Estado,
 } from '../_shared/mensajes.ts';
@@ -32,12 +33,16 @@ const ERRORES: Record<string, string> = {
   nada_que_deshacer: 'No hay cambios que deshacer.',
   tiempo_vencido: 'Ya pasaron 2 minutos; ese cambio ya no se puede deshacer.',
 };
-const NOMBRE_ROL: Record<string, string> = { alertas: 'alertas de reportes', comunicacion: 'comunicación (noticias y donativos)', respaldo: 'respaldo' };
+const NOMBRE_ROL: Record<string, string> = { alertas: 'alertas de reportes', comunicacion: 'comunicación (noticias y donativos)', respaldo: 'respaldo', interno: 'comunicación interna (servicios)' };
 
 Deno.serve(async (req) => {
   if (req.headers.get('x-telegram-bot-api-secret-token') !== await secretoWebhook()) return new Response('no autorizado', { status: 401 });
   const u = await req.json().catch(() => ({}));
   try {
+    const loc = (u.message ?? u.edited_message)?.location;
+    const priv = (u.message ?? u.edited_message)?.chat?.type === 'private';
+    if (loc && priv) { await ubicacionOficial((u.message ?? u.edited_message).chat.id, loc.latitude, loc.longitude, loc.horizontal_accuracy); return new Response('ok'); }
+    if (u.edited_message) return new Response('ok');
     if (u.message) await mensaje(u.message);
     else if (u.callback_query) await boton(u.callback_query);
   } catch (e) { console.error('webhook', e); }
@@ -75,6 +80,18 @@ async function mensaje(m: Msg) {
     const r = await rolDeChat(chat);
     return responder(`El número de este chat es <code>${chat}</code>.\n` +
       (r ? `Este grupo está vinculado como <b>${NOMBRE_ROL[r] ?? r}</b>.` : 'Este grupo todavía <b>no está vinculado</b> a SIMUB.'));
+  }
+  if (c?.comando === 'start' && m.chat.type === 'private' && /^OF[A-Z0-9]+$/i.test(c.arg ?? '')) {
+    const { data, error } = await db.rpc('vincular_oficial', { p_codigo: c.arg!.slice(2), p_chat: chat });
+    if (error || !data) return responder('Ese enlace no es válido. Pide a cabina uno nuevo.');
+    return responder(`Listo, <b>${data}</b>: desde ahora cabina puede enviarte servicios por aquí.\n\nCuando estés en un servicio, comparte tu <b>ubicación en tiempo real</b> (📎 › Ubicación) para aparecer en el mapa de cabina. Escribe /ubicacion para dejar de aparecer.`);
+  }
+  if (c?.comando === 'ubicacion' && m.chat.type === 'private') {
+    const { data: p } = await db.from('personal').select('id, nombre').eq('tg_chat_id', chat).maybeSingle();
+    if (!p) return responder('Este chat no está vinculado como oficial.');
+    await db.from('personal').update({ comparte_ubicacion: false }).eq('id', p.id);
+    await db.from('posiciones').delete().eq('tipo', 'oficial').eq('autor', p.nombre);
+    return responder('Listo: ya no apareces en el mapa de cabina. Para volver, comparte tu ubicación de nuevo.', { reply_markup: { remove_keyboard: true } });
   }
   if (c && ['start', 'ayuda', 'help'].includes(c.comando)) return responder(AYUDA);
   if (c?.comando === 'vincular') {
@@ -196,6 +213,22 @@ async function boton(q: any) {
   if (a.tipo === 'noticia' || a.tipo === 'necesidad') {
     if (rol !== 'comunicacion' && rol !== 'alertas') return contestar('Este grupo no está vinculado a SIMUB.');
     return a.tipo === 'noticia' ? botonNoticia(q, a.op, a.arg, contestar) : botonNecesidad(q, a.op, a.arg, contestar);
+  }
+  const oficial = q.message?.chat?.type === 'private'
+    ? (await db.from('personal').select('id, nombre').eq('tg_chat_id', chat).maybeSingle()).data : null;
+  if (a.tipo === 'ubicacion_off') {
+    if (!oficial) return contestar('Este chat no está vinculado como oficial.');
+    await db.from('personal').update({ comparte_ubicacion: false }).eq('id', oficial.id);
+    await db.from('posiciones').delete().eq('tipo', 'oficial').eq('autor', oficial.nombre);
+    return contestar('Listo: ya no apareces en el mapa de cabina. Si compartes ubicación en tiempo real, detenla también en Telegram.', true);
+  }
+  if (a.tipo === 'voy') {   // grupo interno u oficial en privado: confirma que acude al servicio
+    if (rol !== 'interno' && rol !== 'alertas' && !oficial) return contestar('Este grupo no está vinculado a SIMUB.');
+    const { error } = await db.from('voy').upsert({ servicio_id: a.id, tg_user: q.from.id, nombre: actor }, { onConflict: 'servicio_id,tg_user', ignoreDuplicates: true });
+    if (error) return contestar('No se pudo anotar.', true);
+    await db.from('bitacora').insert({ servicio_id: a.id, texto: `Confirma que acude (Telegram): ${actor}`, autor: actor });
+    await avisarServicio(a.id);
+    return contestar(`Anotado, ${actor}: vas al servicio.`);
   }
   if (rol !== 'alertas') return contestar('Este grupo no es el de alertas de SIMUB.');
 

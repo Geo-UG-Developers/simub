@@ -6,7 +6,10 @@ import { FORMULARIOS } from '../formularios';
 import { CORPORACIONES, MEDIOS, MESES_TXT, leerHistorico, type Clase } from './catalogo';
 import { descargar, escribirExcel, leerExcel, type Celda } from './excel';
 import { entregarPdf, servicioPdf } from './pdf';
-import { clima, detalleClima, pastillaClima } from './clima';
+import { clima, detalleClima, pastillaClima, widgetClima } from './clima';
+import { columnas } from './graficas';
+import { activarClaves, campoClave, valorClave } from './clave';
+import { avisarVentanas } from './ventanas';
 import { activarBuscadores, buscador, cargarLugares, fuente } from './buscador';
 import { inicioSesion } from './control';
 import {
@@ -14,8 +17,8 @@ import {
   lienzoFirma, multi, persona, valoresMulti,
 } from './selectores';
 import {
-  anularServicio, bitacora, cerrarServicio, conteos, desbloquear, estadoUnidad, firmar, guardarServicio, importarServicios, mando, reabrirServicio,
-  registrarImportacion, servicio, servicioDesdeReporte, servicios, tabla, type Mando, type Rol, type Servicio, type ServicioLista, type Unidad, type Yo,
+  anularServicio, autorizarEdicion, detalle as detalleReporte, bitacora, enviarInterno as enviarInternoD, enviarOficial as enviarOficialD, oficiales, cerrarServicio, conteos, desbloquear, estadoUnidad, firmar, guardarServicio, importarServicios, mando, reabrirServicio,
+  registrarImportacion, servicio, servicioDesdeReporte, guardarGuardia, notificar, accion, urlsEvidencias, servicioParcial as servicioParcialP,  servicios, tabla, type Mando, type Rol, type Servicio, type ServicioLista, type Unidad, type Yo,
 } from './datos';
 
 export interface Ctx {
@@ -64,7 +67,7 @@ function cajon(html: string, etiqueta: string) {
   document.body.appendChild(fondo);
   const cerrar = () => fondo.remove();
   fondo.addEventListener('click', (e) => { if (e.target === fondo) cerrar(); });
-  fondo.querySelector('[data-x]')?.addEventListener('click', cerrar);
+  fondo.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-x]')) cerrar(); });
   (fondo.querySelector('input,select,textarea') as HTMLElement | null)?.focus();
   return { fondo, cerrar };
 }
@@ -78,13 +81,15 @@ const EST_U: Record<string, { txt: string; cls: string }> = {
 
 export async function vistaMando(c: Ctx) {
   c.marco('mando', 'Centro de mando', 'Servicios en curso, estado de las unidades y bitácora. Se actualiza solo cada 15 segundos.',
-    `<div id="m-pend"></div>
+    `<div id="m-guardia" class="m-guardia"></div><div id="m-clima-w"></div><div id="m-alertas"></div><div id="m-pend"></div>
      <section class="tarjeta"><div class="fila-tit"><h3>Unidades</h3><span class="tenue chica">Toca una unidad para cambiar su estado.</span></div><div id="m-unidades" class="unidades"></div></section>
      <div class="fila-tit"><h3 id="m-tit">Servicios activos</h3><span class="tenue chica" id="m-act"></span></div>
      <div id="m-servicios" class="m-rejilla"><p class="tenue">Cargando…</p></div>`,
-    `<span id="m-clima"></span><button class="btn" id="m-turno">Cambio de turno</button><a class="btn" href="#guardia">${I.campana(16)} Tablero</a><a class="btn primario" href="#captura">${I.mas(16)} Reporte 911 / externo</a>`);
+    `<button class="btn" id="m-turno">${I.lista(16)} Cambio de cabinero</button>
+     <a class="btn" href="#guardia" target="simub-tablero" title="Se abre en otra ventana">${I.campana(16)} Tablero de guardia</a>
+     <a class="btn primario btn-generar" href="#captura">${I.mas(20)} Generar servicio</a>`);
   $('m-turno').addEventListener('click', () => c.turno());
-  const pintarClima = async () => { const k = await clima(); const e = document.getElementById('m-clima'); if (e) e.innerHTML = pastillaClima(k); };
+  const pintarClima = async () => { const k = await clima(); const e = document.getElementById('m-clima-w'); if (e) e.innerHTML = widgetClima(k); };
   pintarClima(); c.ciclo(pintarClima, 15 * 60000);
   document.querySelector('.cabecera p.tenue')!.insertAdjacentHTML('afterend', `<p class="en-turno">En turno: <b>${esc(c.yo().nombre)}</b>${c.yo().cargo ? ` · ${esc(c.yo().cargo)}` : ''}${inicioSesion() ? ` · desde ${hora(inicioSesion())}` : ''}</p>`);
   await catalogo().catch(() => c.aviso('No se pudo cargar el catálogo de servicios.', true));
@@ -94,10 +99,21 @@ export async function vistaMando(c: Ctx) {
     $('m-act').textContent = `Actualizado ${hora(new Date().toISOString())} · ${m.hoy} servicios hoy`;
     $('m-tit').textContent = `Servicios activos (${m.servicios.length})`;
     const n = document.getElementById('n-mando'); if (n) n.textContent = m.servicios.length ? String(m.servicios.length) : '';
+    const g = m.guardia, al = m.alertas;
+    $('m-guardia').innerHTML = g ? `<span class="pill ${g.turno === 'dia' ? 'p-dorado' : 'p-noche'}">Turno de ${g.turno === 'dia' ? 'día' : 'noche'}</span>
+      <span>Jefe de guardia: <b>${esc(g.jefe ?? 'sin registrar')}</b> · ${g.personal.length} en el pase de lista</span>
+      <button class="btn chico" data-pase="1">${g.jefe ? 'Editar guardia' : 'Registrar guardia y pase de lista'}</button>` : '';
+    const avisos: string[] = [];
+    if (al?.sin_inspeccion.length) avisos.push(`<a href="#unidades">${al.sin_inspeccion.length} unidad(es) sin revisión este turno: ${esc(al.sin_inspeccion.join(', '))}</a>`);
+    if (al?.caducidades.length) avisos.push(`<a href="#unidades">${al.caducidades.length} artículo(s) caducan en 30 días o menos</a>`);
+    if (al?.mantenimiento.length) avisos.push(`<a href="#unidades">Mantenimiento próximo: ${esc(al.mantenimiento.map((x) => `${x.unidad} (${x.tipo})`).join(', '))}</a>`);
+    if (al?.certificaciones.length) avisos.push(`<a href="#capacitacion">${al.certificaciones.length} certificación(es) por vencer</a>`);
+    if (al?.sin_firma) avisos.push(`<a href="#servicios">${al.sin_firma} parte(s) concluidos hace más de 24 h sin firma</a>`);
+    $('m-alertas').innerHTML = avisos.length ? `<div class="m-avisos">${avisos.map((x) => `<span>${x}</span>`).join('')}</div>` : '';
     $('m-pend').innerHTML = m.pendientes.length ? `<section class="tarjeta aviso-app"><h3>${I.campana(18)} Reportes de la app sin servicio (${m.pendientes.length})</h3>
       ${m.pendientes.map((p) => `<div class="fila-pend"><span class="ic-t" style="background:${FORMULARIOS[p.tipo].color}">${I[p.tipo](16)}</span>
         <span class="f-info"><b>${esc(FORMULARIOS[p.tipo].nombre)} · ${esc(p.folio)}</b><small>${hora(p.creado_en)} · hace ${dur(minDesde(p.creado_en))}${p.referencia ? ` · ${esc(p.referencia)}` : ''}${(p.resumen ?? []).length ? ` · ${esc(p.resumen!.slice(0, 2).join(' · '))}` : ''}</small></span>
-        <a class="btn chico" href="#reportes/${p.id}">Ver</a><button class="btn chico primario" data-desde="${p.id}">Abrir servicio</button></div>`).join('')}</section>` : '';
+        <a class="btn chico" href="#reportes/${p.id}">Ver</a><a class="btn chico primario" href="#captura/${p.id}">${I.mas(14)} Generar servicio</a></div>`).join('')}</section>` : '';
     $('m-unidades').innerHTML = m.unidades.map((u) => `<button class="unidad ${EST_U[u.estado].cls}" data-u="${u.id}" title="${esc(u.tipo ?? '')}">
       <b>${esc(u.nombre)}</b><small>${u.estado === 'en_servicio' && u.folio ? `Folio ${u.folio}` : esc(u.nota ?? EST_U[u.estado].txt)}</small></button>`).join('')
       || '<p class="tenue">Agrega las unidades en Ajustes.</p>';
@@ -105,16 +121,22 @@ export async function vistaMando(c: Ctx) {
       const cl = clase(s.clasificacion), min = minDesde(s.h_reporte ?? s.creado_en);
       const sig = HITOS.find(([k]) => !s[k]);
       return `<article class="m-card" style="--c:${cl.color}">
-        <header><span class="m-folio">#${s.folio}</span>${pildora(s.clasificacion, s.falsa_alarma)}<span class="m-min ${min >= 60 ? 'largo' : ''}">${dur(min)}</span></header>
+        <header><span class="m-folio">#${s.folio}</span>${pildora(s.clasificacion, s.falsa_alarma)}${s.turno ? `<em class="pill ${s.turno === 'dia' ? 'p-dorado' : 'p-noche'}">${s.turno === 'dia' ? 'Día' : 'Noche'}</em>` : ''}<span class="m-min ${min >= 60 ? 'largo' : ''}">${dur(min)}</span></header>
         <p class="m-lugar">${I.pin(14)} ${esc([s.colonia, s.lugar].filter(Boolean).join(', ') || 'Sin lugar')}${s.especificacion ? ` · <span class="tenue">${esc(s.especificacion)}</span>` : ''}</p>
         <p class="tenue chica">${esc(s.medio ?? '')}${s.datos?.folio_911 ? ` ${esc(s.datos.folio_911)}` : ''}${s.reportante ? ` · ${esc(s.reportante)}` : ''} · reporte ${hora(s.h_reporte)} · capturó ${esc(s.capturo ?? '')}</p>
         <div class="m-unid">${s.unidades.map((u) => `<span class="u-chip">${esc(u)}</span>`).join('') || '<span class="alerta-txt chica">Sin unidad asignada</span>'}
+          ${s.escena ? `<span class="pill p-ambar">${s.escena} en escena</span>` : ''}${(s.voy ?? []).length ? `<span class="tenue chica">Van: ${esc(s.voy!.join(', '))}</span>` : ''}
           ${Object.keys(s.apoyos ?? {}).length ? `<span class="tenue chica">Apoyo: ${esc(Object.keys(s.apoyos).join(', '))}</span>` : ''}</div>
         <ol class="m-cron">${HITOS.map(([k, , t]) => `<li class="${s[k] ? 'ok' : ''}"><span>${t}</span><b>${hora(s[k] as string | null) || '—'}</b></li>`).join('')}</ol>
         <ul class="m-bit">${(s.bitacora ?? []).slice(0, 3).map((b) => `<li><b>${hora(b.en)}</b> ${esc(b.texto)} <small>${esc(b.autor ?? '')}</small></li>`).join('')}</ul>
-        <footer>${sig ? `<button class="btn chico primario" data-hito="${sig[1]}" data-s="${s.id}">${sig[2]} ahora</button>` : ''}
-          <button class="btn chico" data-nota="${s.id}">Nota</button><a class="btn chico" href="#servicio/${s.id}">Parte</a>
-          <button class="btn chico" data-fin="${s.id}">Concluir</button></footer></article>`;
+        <footer class="m-acciones">
+          <div class="m-fila"><span class="m-etq">Operación</span>${sig ? `<button class="btn chico primario" data-hito="${sig[1]}" data-s="${s.id}">${sig[2]} ahora</button>` : ''}
+            <button class="btn chico" data-nota="${s.id}">Nota</button><a class="btn chico" href="#servicio/${s.id}">Parte</a>
+            <button class="btn chico btn-concluir" data-fin="${s.id}">Concluir</button></div>
+          <div class="m-fila m-com"><span class="m-etq">Telegram</span>
+            <button class="btn chico ${(s.enviado_oficial ?? []).length ? 'enviado' : 'btn-of'}" data-oficial="${s.id}">${(s.enviado_oficial ?? []).length ? 'Reenviar al oficial' : 'Enviar a oficial'}</button>
+            <button class="btn chico ${s.enviado_interno ? 'enviado' : ''}" data-interno="${s.id}">${s.enviado_interno ? 'Reenviar a com. interna' : 'Enviar a comunicación interna'}</button>
+            ${(s.enviado_oficial ?? []).length ? `<small class="tenue">✔ ${esc(s.enviado_oficial!.join(', '))}</small>` : ''}${s.enviado_interno ? '<small class="tenue">✔ grupo interno</small>' : ''}</div></footer></article>`;
     }).join('') : `<div class="vacio-m">${I.check(40)}<b>Sin servicios activos</b><span>Captura aquí cada salida: llamadas, radio, 911, app o servicios de rutina.</span></div>`;
   };
   const cargar = async () => { try { m = await mando(); pintar(); } catch { $('m-act').innerHTML = '<span class="alerta-txt">Sin conexión con el servidor</span>'; } };
@@ -125,17 +147,68 @@ export async function vistaMando(c: Ctx) {
     if (!m) return;
     if (b.dataset.u) return menuUnidad(c, m.unidades.find((u) => u.id === Number(b.dataset.u))!, cargar);
     if (b.dataset.nota) return notaServicio(c, b.dataset.nota, cargar);
+    if (b.dataset.oficial) return enviarAOficial(c, m.servicios.find((x) => x.id === b.dataset.oficial)!, cargar);
+    if (b.dataset.interno) return enviarAInterno(c, m.servicios.find((x) => x.id === b.dataset.interno)!, cargar);
     try {
-      if (b.dataset.hito) { b.disabled = true; await bitacora(b.dataset.s!, null, b.dataset.hito); }
+      if (b.dataset.pase) return paseDeLista(c, m.guardia, cargar);
+      if (b.dataset.hito) { b.disabled = true; await bitacora(b.dataset.s!, null, b.dataset.hito); notificar(b.dataset.s!); avisarVentanas(); }
       else if (b.dataset.fin) {
         if (!confirm('¿Concluir el servicio? Las unidades quedan disponibles. Después llena o revisa el parte.')) return;
-        await cerrarServicio(b.dataset.fin); c.aviso('Servicio concluido. Revisa su parte de servicio.');
-      } else if (b.dataset.desde) { b.disabled = true; const r = await servicioDesdeReporte(b.dataset.desde); location.hash = `#servicio/${r.id}`; return; }
+        await cerrarServicio(b.dataset.fin); notificar(b.dataset.fin); avisarVentanas(); c.aviso('Servicio concluido. Revisa su parte de servicio.');
+      } else if (b.dataset.desde) { b.disabled = true; const r = await servicioDesdeReporte(b.dataset.desde); notificar(r.id); location.hash = `#servicio/${r.id}`; return; }
       else return;
     } catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo guardar.', true); }
     cargar();
   });
   await cargar(); c.ciclo(cargar, 15000);
+}
+
+// ---------------------------------------------------------------- envíos por Telegram (con confirmación para evitar envíos por error)
+function enviarAOficial(c: Ctx, s: Servicio & { enviado_oficial?: string[] }, listo: () => void) {
+  const { fondo, cerrar } = cajon(`${cabCajon('Enviar a oficial', `Folio #${s.folio} · ${esc(clase(s.clasificacion).nombre)}`)}<div class="bloque" id="of-caja"><p class="tenue">Cargando oficiales…</p></div>`, 'Enviar a oficial');
+  const caja = fondo.querySelector<HTMLElement>('#of-caja')!;
+  oficiales().then((xs) => {
+    if (!xs.length) { caja.innerHTML = '<p class="tenue">No hay personal marcado con «Comunicación interna». El Admin. Maestro lo marca en Ajustes › Personal.</p>'; return; }
+    caja.innerHTML = `<p>Se envía <b>por mensaje privado de Telegram</b>: resumen, ubicación en Google Maps, folio, <b>nombre y teléfono de quien reporta</b>,
+        botón para compartir su ubicación y enlace para llenar el parte.</p>
+      <form id="of-f"><div class="of-lista">${xs.map((o) => `<label class="of-item ${o.vinculado ? '' : 'sin'}"><input type="checkbox" name="of" value="${o.id}" ${o.vinculado ? '' : 'disabled'}
+        ${(s.enviado_oficial ?? []).includes(o.corto) ? 'data-ya="1"' : ''}><span><b>${esc(o.corto)}</b><small>${esc(o.nombre)}${o.vinculado ? '' : ' · aún no abre su enlace del bot'}</small></span>
+        ${(s.enviado_oficial ?? []).includes(o.corto) ? '<em class="pill p-verde">Ya enviado</em>' : ''}${o.comparte ? '<em class="pill p-dorado">En mapa</em>' : ''}</label>`).join('')}</div>
+      <div class="fila-btn"><button class="btn primario" type="submit">Continuar</button><button class="btn" type="button" data-x>Cancelar</button></div></form>`;
+    caja.querySelector('[data-x]')!.addEventListener('click', cerrar);
+    caja.querySelector('form')!.addEventListener('submit', (e) => {
+      e.preventDefault(); const ids = new FormData(e.target as HTMLFormElement).getAll('of').map(Number);
+      if (!ids.length) return c.aviso('Marca al menos un oficial.', true);
+      const nombres = xs.filter((o) => ids.includes(o.id)).map((o) => o.corto);
+      caja.innerHTML = `<div class="confirmar"><p>¿Enviar el folio <b>#${s.folio}</b> a <b>${esc(nombres.join(', '))}</b>?</p>
+        <p class="tenue chica">Incluye datos personales de quien reporta: verifica que sean los oficiales correctos.</p>
+        <div class="fila-btn"><button class="btn primario" id="of-si">Sí, enviar</button><button class="btn" id="of-no">Volver</button></div></div>`;
+      caja.querySelector('#of-no')!.addEventListener('click', () => { cerrar(); enviarAOficial(c, s, listo); });
+      caja.querySelector<HTMLButtonElement>('#of-si')!.addEventListener('click', async (ev) => {
+        const b = ev.currentTarget as HTMLButtonElement; b.disabled = true; b.textContent = 'Enviando…';
+        try {
+          const r = await enviarOficialD(s.id, ids);
+          caja.innerHTML = `<div class="folio-ok">${I.check(40)}<b>${r.enviados.length ? 'Mensaje enviado' : 'No se envió'}</b>
+            ${r.enviados.length ? `<p>Enviado por Telegram a: <b>${esc(r.enviados.join(', '))}</b>.</p>` : ''}
+            ${r.sin_telegram.length ? `<p class="alerta-txt">Sin Telegram vinculado: ${esc(r.sin_telegram.join(', '))}. Pídeles abrir su enlace del bot.</p>` : ''}
+            <button class="btn" data-x>Cerrar</button></div>`;
+          caja.querySelector('[data-x]')!.addEventListener('click', cerrar); avisarVentanas(); listo();
+        } catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo enviar. Revisa el internet.', true); b.disabled = false; b.textContent = 'Sí, enviar'; }
+      });
+    });
+  }).catch(() => { caja.innerHTML = '<p class="alerta-txt">No se pudo cargar la lista de oficiales.</p>'; });
+}
+function enviarAInterno(c: Ctx, s: Servicio & { enviado_interno?: boolean }, listo: () => void) {
+  const { fondo, cerrar } = cajon(`${cabCajon(s.enviado_interno ? 'Reenviar a comunicación interna' : 'Enviar a comunicación interna', `Folio #${s.folio}`)}
+    <div class="bloque confirmar"><p>Se envía al <b>grupo de comunicación interna</b> un resumen de la emergencia y su folio:
+      <b>${esc(clase(s.clasificacion).nombre)}</b> en ${esc([s.colonia, s.lugar].filter(Boolean).join(', ') || 'sin lugar')}, unidades y horas.</p>
+      <p class="tenue chica">No incluye nombre ni teléfono de quien reporta ni otros datos personales.</p>
+      <div class="fila-btn"><button class="btn primario" id="in-si">Sí, enviar al grupo</button><button class="btn" data-x>Cancelar</button></div></div>`, 'Comunicación interna');
+  fondo.querySelector<HTMLButtonElement>('#in-si')!.addEventListener('click', async (ev) => {
+    const b = ev.currentTarget as HTMLButtonElement; b.disabled = true; b.textContent = 'Enviando…';
+    try { await enviarInternoD(s.id); cerrar(); c.aviso('Enviado al grupo de comunicación interna.'); avisarVentanas(); listo(); }
+    catch (err) { c.aviso((err as Error).message === 'sin_grupo' ? 'Falta vincular el grupo de comunicación interna (Ajustes › Telegram).' : 'No se pudo enviar.', true); b.disabled = false; b.textContent = 'Sí, enviar al grupo'; }
+  });
 }
 
 function notaServicio(c: Ctx, id: string, listo: () => void) {
@@ -165,7 +238,7 @@ let mesLista = new Date().toISOString().slice(0, 7);
 export async function vistaServicios(c: Ctx) {
   c.marco('servicios', 'Servicios', 'Todos los servicios del mes con su folio. Reemplaza la hoja mensual del Excel.',
     `<div class="filtros"><input id="buscar" type="search" placeholder="Buscar folio, lugar, unidad…"><select id="f-cls"><option value="">Todos los tipos</option></select></div>
-     <section class="tarjeta"><div class="tabla-caja"><table class="tabla t-serv"><thead><tr><th>Folio</th><th>Fecha</th><th>Servicio</th><th>Especificación</th><th>Lugar</th><th>Área</th><th>Unidades</th><th>Pers.</th><th>Salida</th><th>Regreso</th><th>Total</th><th></th></tr></thead>
+     <section class="tarjeta"><div class="tabla-caja"><table class="tabla t-serv"><thead><tr><th>Folio</th><th>Fecha</th><th>Turno</th><th>Servicio</th><th>Especificación</th><th>Lugar</th><th>Área</th><th>Unidades</th><th>Pers.</th><th>Salida</th><th>Regreso</th><th>Total</th><th></th></tr></thead>
      <tbody id="t-serv"><tr><td colspan="12" class="tenue">Cargando…</td></tr></tbody></table></div></section>`,
     `<label class="mes">Mes <input type="month" id="mes" value="${mesLista}"></label>${puedeExportar(c) ? '<button class="btn" id="xls">Descargar Excel</button>' : ''}<a class="btn primario" href="#captura">${I.mas(16)} Capturar servicio</a>`);
   await catalogo();
@@ -180,11 +253,11 @@ export async function vistaServicios(c: Ctx) {
     const vis = xs.filter((s) => (!fc || claveCuenta(s) === fc) && (!q || [s.folio, s.colonia, s.lugar, s.especificacion, s.unidades.join(' '), clase(s.clasificacion).nombre].join(' ').toLowerCase().includes(q)));
     $('t-serv').innerHTML = vis.map((s) => {
       const tot = s.h_despacho && s.h_base ? Math.round((+new Date(s.h_base) - +new Date(s.h_despacho)) / 60000) : null;
-      return `<tr class="${s.estado}"><td class="nw"><b>${s.folio}</b></td><td class="nw">${fechaCorta(s.fecha)}</td><td>${pildora(s.clasificacion, s.falsa_alarma)}</td>
+      return `<tr class="${s.estado}"><td class="nw"><b>${s.folio}</b></td><td class="nw">${fechaCorta(s.fecha)}</td><td>${s.turno === 'dia' ? 'Día' : s.turno === 'noche' ? 'Noche' : ''}</td><td>${pildora(s.clasificacion, s.falsa_alarma)}</td>
         <td>${esc(s.especificacion ?? '')}</td><td>${esc([s.colonia, s.lugar].filter(Boolean).join(', '))}</td><td class="nw">${esc(s.area_afectada ?? '')}</td><td class="nw">${esc(s.unidades.join(' / '))}</td>
         <td>${s.personal_num ?? ''}</td><td class="nw">${hora(s.h_despacho)}</td><td class="nw">${hora(s.h_base)}</td><td class="nw">${tot != null && tot >= 0 ? dur(tot) : ''}</td>
         <td class="nw">${s.estado === 'activo' ? '<em class="pill p-ambar">Activo</em>' : s.estado === 'anulado' ? '<em class="pill p-gris">Anulado</em>' : s.firmado ? '<em class="pill p-dorado">Firmado</em>' : ''}<a class="btn chico" href="#servicio/${s.id}">Abrir</a></td></tr>`;
-    }).join('') || '<tr><td colspan="12" class="tenue">Sin servicios en este mes.</td></tr>';
+    }).join('') || '<tr><td colspan="13" class="tenue">Sin servicios en este mes.</td></tr>';
   };
   $('buscar').addEventListener('input', pintar); $('f-cls').addEventListener('change', pintar); pintar();
   document.getElementById('xls')?.addEventListener('click', () => {
@@ -198,11 +271,11 @@ const tiempo = (desde?: string | null, hasta?: string | null) => {
   return mm >= 0 ? `${Math.floor(mm / 60)}:${String(mm % 60).padStart(2, '0')}` : '';
 };
 function hojaServicios(nombre: string, xs: ServicioLista[]) {
-  const filas: Celda[][] = [['FOLIO', 'FECHA', 'SERVICIO', 'TIPO DE SERVICIO (ESPECIFICACIÓN)', 'LUGAR', 'AREA AFECTADA M2', 'EQUIPO UTILIZADO', 'PERSONAL', 'TIEMPO', 'TIEMPO2', 'TOTAL DE TIEMPO', 'APOYOS']];
+  const filas: Celda[][] = [['FOLIO', 'FECHA', 'SERVICIO', 'TIPO DE SERVICIO (ESPECIFICACIÓN)', 'LUGAR', 'AREA AFECTADA M2', 'EQUIPO UTILIZADO', 'PERSONAL', 'TIEMPO', 'TIEMPO2', 'TOTAL DE TIEMPO', 'APOYOS', 'TURNO']];
   for (const s of xs) filas.push([s.folio, new Date(`${s.fecha}T12:00:00`).toLocaleDateString('es-MX'), s.falsa_alarma ? 'FALSA ALARMA' : clase(s.clasificacion).nombre,
     s.falsa_alarma ? `${clase(s.clasificacion).nombre}${s.especificacion ? ` · ${s.especificacion}` : ''}` : s.especificacion ?? '', [s.colonia, s.lugar].filter(Boolean).join(', '), s.area_afectada ?? 'N/A',
-    s.unidades.join(' / '), s.personal_num, hora(s.h_despacho), hora(s.h_base), tiempo(s.h_despacho, s.h_base), Object.keys(s.apoyos ?? {}).join(', ')]);
-  return { nombre, filas, anchos: [8, 12, 26, 32, 40, 14, 16, 9, 8, 8, 10, 24] };
+    s.unidades.join(' / '), s.personal_num, hora(s.h_despacho), hora(s.h_base), tiempo(s.h_despacho, s.h_base), Object.keys(s.apoyos ?? {}).join(', '), s.turno === 'dia' ? 'DÍA' : s.turno === 'noche' ? 'NOCHE' : '']);
+  return { nombre, filas, anchos: [8, 12, 26, 32, 40, 14, 16, 9, 8, 8, 10, 24, 8] };
 }
 const contar = (xs: ServicioLista[], mes?: number) => {
   const n: Record<string, number> = {};
@@ -231,20 +304,24 @@ async function listas() {
     colonias: col.filter((x) => x.activa).map((x) => x.nombre) };
 }
 
-export async function vistaCaptura(c: Ctx) {
-  c.marco('captura', 'Reporte 911 o externo', 'Para servicios que llegan por 911, radio, teléfono o en persona. Toca en vez de escribir: se registra con el siguiente folio del año.',
+export async function vistaCaptura(c: Ctx, reporteId?: string) {
+  c.marco('captura', 'Generar servicio', 'Da folio al servicio y asigna unidades y brigada. Para 911, radio, teléfono, en persona o un reporte de la app. Toca en vez de escribir.',
     '<div id="cap"><p class="tenue">Cargando…</p></div>', `<a class="btn" href="#mando">Centro de mando</a>`);
   await catalogo();
-  const [L2, m] = await Promise.all([listas(), mando().catch(() => null)]);
+  const [L2, m, rep] = await Promise.all([listas(), mando().catch(() => null), reporteId ? detalleReporte(reporteId).catch(() => null) : Promise.resolve(null)]);
+  if (rep?.servicio_id) { c.aviso('Ese reporte ya tiene servicio.'); location.hash = `#servicio/${rep.servicio_id}`; return; }
+  const origenes = rep ? ['App SIMUB', ...ORIGENES] : ORIGENES; const origen = rep ? 'App SIMUB' : ORIGEN_ULT;
   const ocupadas = new Map((m?.unidades ?? []).filter((u) => u.estado !== 'disponible').map((u) => [u.nombre, u.estado === 'en_servicio' ? `folio ${u.folio}` : 'fuera']));
   const grupos = [...new Set(CAT.filter((x) => x.id !== 'falsa' && x.activo).map((x) => x.grupo))];
   $('cap').innerHTML = `<form id="f-cap" class="captura" autocomplete="off">
+    ${rep ? `<section class="tarjeta aviso-app"><h3>${I.campana(18)} Reporte de la app ${esc(rep.folio)}</h3><p><b>${esc(FORMULARIOS[rep.tipo].nombre)}</b> · ${hora(rep.creado_en)}${rep.referencia ? ` · ${esc(rep.referencia)}` : ''}</p>
+      ${(rep.detalles.resumen ?? []).length ? `<p class="tenue">${esc(rep.detalles.resumen!.join(' · '))}</p>` : ''}${rep.comentario ? `<p class="tenue">«${esc(rep.comentario)}»</p>` : ''}</section>` : ''}
     <section class="bloque"><h3>1. ¿Quién lo reporta?</h3>
-      <div class="chips-sel" data-radio="medio">${ORIGENES.map((o) => `<button type="button" class="mchip ${o === ORIGEN_ULT ? 'on' : ''}" data-v="${o}">${o}</button>`).join('')}</div>
-      <input type="hidden" name="medio" value="${ORIGEN_ULT}">
-      <div class="rejilla-3"><label id="c-f911">Folio 911<input name="folio_911" inputmode="numeric" placeholder="Si lo dieron"></label>
+      <div class="chips-sel" data-radio="medio">${origenes.map((o) => `<button type="button" class="mchip ${o === origen ? 'on' : ''}" data-v="${o}">${o}</button>`).join('')}</div>
+      <input type="hidden" name="medio" value="${origen}">
+      <div class="rejilla-3"><label id="c-f911" ${origen === '911' ? '' : 'hidden'}>Folio 911<input name="folio_911" inputmode="numeric" placeholder="Si lo dieron"></label>
         <label id="c-corp" hidden>Corporación que lo pasó<select name="corp">${CORPORACIONES.map((x) => `<option>${x}</option>`).join('')}</select></label>
-        <label>Hora en que llegó<input type="datetime-local" name="h_reporte" value="${localInput(new Date().toISOString())}"></label></div></section>
+        <label>Hora en que llegó<input type="datetime-local" name="h_reporte" value="${localInput(rep?.creado_en ?? new Date().toISOString())}"></label></div></section>
     <section class="bloque"><h3>2. ¿Qué pasa?</h3>
       ${grupos.map((g) => `<div class="tipos-g"><span>${esc(g)}</span><div>${CAT.filter((x) => x.grupo === g && x.id !== 'falsa' && x.activo)
         .map((x) => `<button type="button" class="tipo-b" data-cls="${x.id}" style="--c:${x.color}">${esc(x.nombre.replace(/^(INCENDIO|ACCIDENTE|RESCATE|PACIENTE|CAÍDA) (DE )?/, ''))}</button>`).join('')}</div></div>`).join('')}
@@ -254,10 +331,11 @@ export async function vistaCaptura(c: Ctx) {
       <label class="fila-check"><span>Falsa alarma</span><input type="checkbox" name="falsa_alarma"></label></div></section>
     <section class="bloque"><h3>3. ¿Dónde?</h3><div class="rejilla-2">
       <label>Colonia o comunidad${buscador('colonia', '', 'colonias', 'placeholder="Toca y empieza a escribir…" required')}</label>
-      <label>Calle, número o referencia${buscador('lugar', '', 'calles', 'maxlength="300" placeholder="Ej. Calle Pino 12, frente a la tienda"')}</label></div>
-      <input type="hidden" name="lat"><input type="hidden" name="lon">
-      <div class="rejilla-2"><label>Quién reporta <small>(opcional)</small><input name="reportante" maxlength="120"></label>
-      <label>Teléfono <small>(opcional)</small><input name="telefono" inputmode="tel" maxlength="20"></label></div></section>
+      <label>Calle, número o referencia${buscador('lugar', rep?.referencia ?? '', 'calles', 'maxlength="300" placeholder="Ej. Calle Pino 12, frente a la tienda"')}</label></div>
+      <input type="hidden" name="lat" value="${rep?.lat ?? ''}"><input type="hidden" name="lon" value="${rep?.lon ?? ''}">
+      ${rep ? `<p class="tenue chica">Ubicación enviada por la app: <a href="https://www.google.com/maps/search/?api=1&query=${rep.lat},${rep.lon}" target="_blank" rel="noopener">${rep.lat.toFixed(5)}, ${rep.lon.toFixed(5)}</a></p>` : ''}
+      <div class="rejilla-2"><label>Quién reporta <small>(opcional)</small><input name="reportante" maxlength="120" value="${esc(rep ? (rep.anonimo ? 'Anónimo' : rep.nombre ?? '') : '')}"></label>
+      <label>Teléfono <small>(opcional)</small><input name="telefono" inputmode="tel" maxlength="20" value="${esc(rep?.telefono ?? '')}"></label></div></section>
     <section class="bloque"><h3>4. Unidades</h3>
       <div class="multi" data-multi="unidades"><input type="hidden" name="unidades" value="">
         <div class="multi-chips">${L2.unidades.map((u) => `<button type="button" class="mchip ${ocupadas.has(u) ? 'ocupada' : ''}" data-v="${esc(u)}" ${ocupadas.get(u) === 'fuera' ? 'disabled' : ''}>${esc(u)}${ocupadas.has(u) ? ` <small>${esc(ocupadas.get(u))}</small>` : ''}</button>`).join('')}</div></div>
@@ -265,7 +343,10 @@ export async function vistaCaptura(c: Ctx) {
         <button type="button" class="mchip" data-v="concluido">Ya se atendió (captura posterior)</button></div><input type="hidden" name="modo" value="ahora">
       <div class="rejilla-3" id="c-horas" hidden><label>Salida<input type="datetime-local" name="h_despacho"></label><label>Llegada a la escena<input type="datetime-local" name="h_llegada"></label><label>Regreso a base<input type="datetime-local" name="h_base"></label></div>
 </section>
-    <div class="cap-pie"><button class="btn primario grande" type="submit">Registrar y dar folio</button><span class="tenue chica">Captura: <b>${esc(c.yo().nombre)}</b></span></div>
+    <section class="bloque"><h3>5. Brigada y responsables</h3><p class="tenue chica">Quién va a cargo de cada unidad. Se puede completar después en el parte.</p>
+      <label>Jefe de servicio (a cargo de la emergencia)${buscador('jefe_servicio', '', 'personal', 'placeholder="Toca y escribe el nombre"')}</label>
+      <div id="c-brig"><p class="tenue chica">Elige primero las unidades.</p></div></section>
+    <div class="cap-pie"><button class="btn primario grande" type="submit">${I.mas(18)} Generar servicio y dar folio</button><span class="tenue chica">Captura: <b>${esc(c.yo().nombre)}</b></span></div>
   </form><div id="cap-ok"></div>`;
   const form = $<HTMLFormElement>('f-cap');
   const set = (n: string, v: string) => { (form.elements.namedItem(n) as HTMLInputElement).value = v; };
@@ -277,6 +358,20 @@ export async function vistaCaptura(c: Ctx) {
     if (g.dataset.radio === 'medio') { ORIGEN_ULT = b.dataset.v!; $('c-f911').hidden = b.dataset.v !== '911'; $('c-corp').hidden = b.dataset.v !== 'Otra corporación'; }
     if (g.dataset.radio === 'modo') $('c-horas').hidden = b.dataset.v !== 'concluido';
   }));
+  const brig = new Map<string, { maquinista: string; jefe: string; bomberos: string }>();
+  const leerBrig = () => form.querySelectorAll<HTMLElement>('[data-brig]').forEach((f) => {
+    const u = f.dataset.brig!, q = (n: string) => (f.querySelector(`[name="${n}"]`) as HTMLInputElement | null)?.value ?? '';
+    brig.set(u, { maquinista: q(`b_maq_${u}`), jefe: q(`b_jefe_${u}`), bomberos: q(`b_bom_${u}`) });
+  });
+  const pintarBrig = () => {
+    leerBrig(); const uds = valoresMulti((form.elements.namedItem('unidades') as HTMLInputElement).value);
+    $('c-brig').innerHTML = uds.length ? `<div class="tabla-caja"><table class="tabla t-form"><thead><tr><th>Unidad</th><th>Maquinista</th><th>Jefe de unidad</th><th>Bomberos</th></tr></thead><tbody>
+      ${uds.map((u) => { const b = brig.get(u); return `<tr data-brig="${esc(u)}"><th>${esc(u)}</th><td>${buscador(`b_maq_${u}`, b?.maquinista ?? '', 'personal', 'placeholder="Nombre"')}</td>
+        <td>${buscador(`b_jefe_${u}`, b?.jefe ?? '', 'personal', 'placeholder="Nombre"')}</td><td>${multi(`b_bom_${u}`, [], valoresMulti(b?.bomberos ?? ''), 'Toca para elegir', false, [], 'personal')}</td></tr>`; }).join('')}</tbody></table></div>`
+      : '<p class="tenue chica">Elige primero las unidades.</p>';
+    activarBuscadores($('c-brig')); activarMulti($('c-brig'));
+  };
+  form.querySelector('[data-multi="unidades"]')!.addEventListener('click', () => setTimeout(pintarBrig, 0));
   form.querySelectorAll<HTMLButtonElement>('[data-cls]').forEach((b) => b.addEventListener('click', () => {
     form.querySelectorAll('[data-cls]').forEach((x) => x.classList.toggle('on', x === b)); set('clasificacion', b.dataset.cls!);
     const sug = ESPECIFICACIONES[b.dataset.cls!] ?? [];
@@ -288,24 +383,31 @@ export async function vistaCaptura(c: Ctx) {
     const modo = g('modo'), uds = valoresMulti(fd.get('unidades'));
     if (modo === 'concluido' && !g('h_despacho')) return c.aviso('Escribe al menos la hora de salida.', true);
     const btn = form.querySelector<HTMLButtonElement>('button[type=submit]')!; btn.disabled = true; btn.textContent = 'Registrando…';
-    const medio = g('medio') === 'Otra corporación' ? `Otra corporación (${g('corp')})` : g('medio');
+    const medio = g('medio') === 'Otra corporación' ? `Otra corporación (${g('corp')})` : g('medio') === 'App SIMUB' && rep ? `App SIMUB (${rep.folio})` : g('medio');
+    leerBrig();
     try {
-      const r = await guardarServicio(null, {
+      const base = rep ? await servicioDesdeReporte(rep.id) : null;
+      const r = await guardarServicio(base?.id ?? null, {
         clasificacion: g('clasificacion'), especificacion: g('especificacion'), colonia: g('colonia'), lugar: g('lugar'), medio,
         reportante: g('reportante'), telefono: g('telefono'), h_reporte: desdeLocal(g('h_reporte')), lat: g('lat'), lon: g('lon'), unidades: modo === 'concluido' ? uds : uds,
         falsa_alarma: fd.get('falsa_alarma') === 'on', datos: g('folio_911') ? { folio_911: g('folio_911') } : {},
         apoyos: g('medio') === 'Otra corporación' ? { [g('corp')]: { unidades: '', encargado: '' } } : {},
         h_despacho: desdeLocal(g('h_despacho')), h_llegada: desdeLocal(g('h_llegada')), h_base: desdeLocal(g('h_base')),
-        tripulacion: uds.map((u) => ({ unidad: u, maquinista: '', jefe: '', bomberos: '' })),
+        tripulacion: uds.map((u) => ({ unidad: u, maquinista: brig.get(u)?.maquinista ?? '', jefe: brig.get(u)?.jefe ?? '', bomberos: brig.get(u)?.bomberos ?? '' })),
+        jefe_servicio: g('jefe_servicio'),
+        personal_num: (() => { const n = new Set([g('jefe_servicio'), ...uds.flatMap((u) => [brig.get(u)?.maquinista, brig.get(u)?.jefe, ...valoresMulti(brig.get(u)?.bomberos ?? '')])].filter(Boolean)); return n.size || ''; })(),
       });
       if (modo === 'ahora') await bitacora(r.id, null, 'despacho');
       if (modo === 'concluido') await cerrarServicio(r.id);
-      form.hidden = true;
-      $('cap-ok').innerHTML = `<section class="tarjeta folio-ok">${I.check(44)}<span>Folio asignado</span><b>${folioTxt(r)}</b>
-        <p>${pildora(g('clasificacion'), fd.get('falsa_alarma') === 'on')} · ${esc(g('colonia'))}${uds.length ? ` · ${esc(uds.join(', '))}` : ''}</p>
-        <div class="fila-btn"><a class="btn primario" href="#servicio/${r.id}">Completar el parte</a><button class="btn" id="otro">Registrar otro</button><a class="btn" href="#mando">Centro de mando</a></div></section>`;
-      $('otro').addEventListener('click', () => vistaCaptura(c));
-    } catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo registrar.', true); btn.disabled = false; btn.textContent = 'Registrar y dar folio'; }
+      notificar(r.id); avisarVentanas();
+      if (modo === 'concluido') {
+        form.hidden = true;
+        $('cap-ok').innerHTML = `<section class="tarjeta folio-ok">${I.check(44)}<span>Folio asignado</span><b>${folioTxt(r)}</b>
+          <p>${pildora(g('clasificacion'), fd.get('falsa_alarma') === 'on')} · ${esc(g('colonia'))}${uds.length ? ` · ${esc(uds.join(', '))}` : ''}</p>
+          <div class="fila-btn"><a class="btn primario" href="#servicio/${r.id}">Completar el parte</a><button class="btn" id="otro">Registrar otro</button><a class="btn" href="#mando">Centro de mando</a></div></section>`;
+        $('otro').addEventListener('click', () => vistaCaptura(c));
+      } else { c.aviso(`Servicio generado: folio ${folioTxt(r)}. Ya aparece en servicios activos.`); location.hash = '#mando'; }
+    } catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo registrar.', true); btn.disabled = false; btn.textContent = 'Generar servicio y dar folio'; }
   });
   form.querySelector<HTMLInputElement>('[name=folio_911]')?.focus();
 }
@@ -341,14 +443,18 @@ export async function vistaServicio(c: Ctx, id: string) {
     return `<div class="firma-caja"><span class="etq">${t}</span>${buscador(`f_${k}`, nombre, 'personal', dis + ' placeholder="Nombre"')}
       ${f?.imagen ? `<img src="${f.imagen}" alt="Firma de ${esc(f.nombre ?? t)}"><small class="tenue">Firmó ${new Date(f.en).toLocaleString('es-MX')} · registró ${esc(f.registro)}</small>` : '<div class="firma-vacia">Sin firma</div>'}
       ${editable ? `<button type="button" class="btn chico" data-firmar="${k}">${f?.imagen ? 'Volver a firmar' : 'Firmar en pantalla'}</button>` : ''}</div>`; };
+  const corregible = !admin && S.estado !== 'anulado' && S.origen !== 'historico';
   $('parte').innerHTML = `
-  ${!editable ? `<div class="aviso-candado">${S.bloqueado ? 'Parte <b>firmado</b> por el jefe de servicio: ya no se puede modificar.' : 'Este registro ya está cerrado: solo el Comandante o el responsable de la app pueden corregirlo.'}
-     ${admin && S.bloqueado ? '<button class="btn chico" id="desbloquear">Desbloquear para corregir</button>' : ''}</div>` : ''}
+  <div class="volver-barra"><a class="btn" href="#servicios">← Volver a la lista de servicios</a><b>Folio ${folioTxt(S)}</b><a class="btn chico" href="#mando">Centro de mando</a>
+    <button type="button" class="btn chico" id="arriba" aria-label="Ir arriba">↑ Arriba</button></div>
+  ${!editable ? `<div class="aviso-candado">${S.bloqueado ? 'Parte <b>firmado</b> por el jefe de servicio: ya no se puede modificar.' : 'Este registro ya está cerrado: solo el <b>Admin. Maestro</b> puede corregirlo.'}
+     ${admin && S.bloqueado ? '<button class="btn chico" id="desbloquear">Desbloquear para corregir</button>' : ''}
+     ${corregible ? '<button class="btn chico primario" id="autorizar">Corregir con autorización del Admin. Maestro</button>' : ''}</div>` : ''}
   ${editable && S.bloqueado ? `<div class="aviso-candado">Parte firmado. Como administrador puedes corregirlo; el cambio queda en el control interno.</div>` : ''}
   <form class="parte" id="f-parte" autocomplete="off"><fieldset class="sin-borde" ${dis}>
     <section class="bloque parte-cab2"><div><span class="etq">Folio</span><b class="folio-g">${folioTxt(S)}</b></div>
       <div>${pildora(S.clasificacion, S.falsa_alarma)} <em class="pill ${S.estado === 'activo' ? 'p-ambar' : S.estado === 'anulado' ? 'p-gris' : 'p-verde'}">${S.estado === 'activo' ? 'En curso' : S.estado === 'anulado' ? 'Anulado' : 'Concluido'}</em>
-      ${S.bloqueado ? '<em class="pill p-dorado">Firmado</em>' : ''}${S.origen === 'historico' ? '<em class="pill p-gris">Importado del Excel</em>' : ''}${S.reporte_folio ? `<a class="pill p-dorado" href="#reportes/${S.reporte_id}">Reporte app ${esc(S.reporte_folio)}</a>` : ''}
+      ${S.turno ? `<em class="pill ${S.turno === 'dia' ? 'p-dorado' : 'p-noche'}">Turno ${S.turno === 'dia' ? 'día' : 'noche'}</em>` : ''}${S.bloqueado ? '<em class="pill p-dorado">Firmado</em>' : ''}${S.origen === 'historico' ? '<em class="pill p-gris">Importado del Excel</em>' : ''}${S.reporte_folio ? `<a class="pill p-dorado" href="#reportes/${S.reporte_id}">Reporte app ${esc(S.reporte_folio)}</a>` : ''}
       <br><small class="tenue">Capturó: <b>${esc(S.capturo ?? '—')}</b>${S.editado_por ? ` · última edición: ${esc(S.editado_por)}` : ''} · llenando ahora: <b>${esc(c.yo().nombre)}</b></small></div>
       <label>Fecha<input type="date" name="fecha" value="${v(S.fecha)}" required></label>
       <label class="fila-check"><span>Falsa alarma</span><input type="checkbox" name="falsa_alarma" ${S.falsa_alarma ? 'checked' : ''}></label></section>
@@ -381,6 +487,16 @@ export async function vistaServicio(c: Ctx, id: string) {
       <div class="tabla-caja"><table class="tabla t-form"><tbody id="t-corp">${filasCorp(corpsSel, S.apoyos ?? {})}</tbody></table></div></section>
     <section class="bloque"><h3>Personas localizadas en la escena</h3>
       ${filasAgregables('t-per', per.length, (i) => filaPer(i), 'Agregar persona', !editable)}</section>
+    <section class="bloque"><h3>Recursos utilizados</h3><div class="rejilla-4">
+      <label>Agua (litros)<input type="number" name="r_agua_litros" value="${v(S.recursos?.agua_litros)}"></label><label>Espuma (litros)<input type="number" name="r_espuma_litros" value="${v(S.recursos?.espuma_litros)}"></label>
+      <label>Extintores<input type="number" name="r_extintores" value="${v(S.recursos?.extintores)}"></label><label>Tramos de manguera<input type="number" name="r_mangueras" value="${v(S.recursos?.mangueras)}"></label></div>
+      <label>Daños<input name="r_danos" value="${v(S.recursos?.danos)}"></label></section>
+    ${(S.evidencias ?? []).length || (S.escena ?? []).length || Object.keys(S.sci ?? {}).length || S.perimetro ? `<section class="bloque"><h3>Desde el lugar (app de campo)</h3>
+      ${S.perimetro ? `<p>Área dibujada en el mapa: <b>${esc(S.area_afectada ?? '')}</b></p>` : ''}
+      ${Object.values(S.sci ?? {}).some(Boolean) ? `<p><b>Comando del incidente:</b> ${esc(S.sci?.comandante ?? '—')}${S.sci?.puesto ? ` · puesto: ${esc(S.sci.puesto)}` : ''}<br>
+        ${S.sci?.situacion ? `<b>Situación:</b> ${esc(S.sci.situacion)}<br>` : ''}${S.sci?.objetivos ? `<b>Objetivos:</b> ${esc(S.sci.objetivos)}` : ''}</p>` : ''}
+      ${(S.escena ?? []).length ? `<p><b>Personal en escena:</b> ${(S.escena ?? []).map((e) => `${esc(e.persona)}${e.asignacion ? ` (${esc(e.asignacion)})` : ''} ${hora(e.entra)}–${e.sale ? hora(e.sale) : 'dentro'}`).join(' · ')}</p>` : ''}
+      ${(S.evidencias ?? []).length ? `<div class="cp-galeria" id="p-gal"></div>` : ''}</section>` : ''}
     <section class="bloque"><h3>Observaciones</h3><textarea name="observaciones" rows="5">${v(S.observaciones)}</textarea></section>
     <section class="bloque"><h3>Firmas</h3><div class="rejilla-3 firmas">${FIRMAS.map(([k, t]) => firmaCaja(k, t)).join('')}</div>
       <p class="tenue chica">Se firma con el dedo (celular o tableta) o con el mouse. Al firmar el jefe de servicio, el parte queda cerrado y se guarda su huella digital (SHA-256) para comprobar que no cambió.</p></section>
@@ -390,7 +506,7 @@ export async function vistaServicio(c: Ctx, id: string) {
     <div class="pie-parte">
       ${editable ? '<button class="btn primario" type="submit">Guardar parte</button>' : ''}
       <button class="btn" type="button" id="pdf">Descargar PDF</button>
-      ${S.estado === 'activo' ? '<button class="btn" type="button" id="concluir">Concluir servicio</button>' : ''}
+      ${S.estado === 'activo' ? '<button class="btn" type="button" id="concluir">Concluir servicio</button><button class="btn" type="button" id="apoyo">Pedir apoyo</button>' : ''}
       ${S.estado === 'cerrado' && admin ? '<button class="btn tenue-btn" type="button" id="reabrir">Reabrir</button>' : ''}
       ${admin && S.estado !== 'anulado' ? '<button class="btn tenue-btn" type="button" id="anular">Anular folio</button>' : ''}
       <span class="tenue chica">Actualizado ${new Date(S.actualizado_en).toLocaleString('es-MX')}</span></div>
@@ -399,6 +515,14 @@ export async function vistaServicio(c: Ctx, id: string) {
     ${S.estado === 'anulado' ? '' : '<form class="fila-btn" id="f-bit"><input name="t" maxlength="1000" placeholder="Agregar nota a la bitácora" required><button class="btn">Agregar</button></form>'}</section>`;
   const form = $<HTMLFormElement>('f-parte');
   activarMulti(form); activarArea(form);
+  if ((S.evidencias ?? []).length) urlsEvidencias(S.evidencias!.map((x) => x.ruta)).then((us) => { const g = document.getElementById('p-gal'); if (g) g.innerHTML = S.evidencias!.map((x, i) => x.tipo === 'video'
+    ? `<figure><video src="${us[i]}" controls preload="none"></video><figcaption>${esc(x.nota ?? '')}</figcaption></figure>`
+    : `<figure><a href="${us[i]}" target="_blank" rel="noopener"><img src="${us[i]}" alt=""></a><figcaption>${esc(x.nota ?? '')} · ${esc(x.autor ?? '')}</figcaption></figure>`).join(''); });
+  document.getElementById('apoyo')?.addEventListener('click', async () => {
+    const t = prompt('¿Qué apoyo se necesita? (ej. pipa de agua, ambulancia, Cruz Roja)'); if (!t?.trim()) return;
+    try { await accion({ accion: 'apoyo', servicio: id, texto: t.trim() }); c.aviso('Solicitud enviada al grupo interno de Telegram.'); vistaServicio(c, id); }
+    catch (e) { c.aviso((e as Error).message === 'sin_grupo' ? 'Falta vincular el grupo interno de Telegram (Ajustes).' : 'No se pudo enviar.', true); }
+  });
   activarBuscadores(form, (i, o) => { if (o.lat && S.lat == null && (i.name === 'colonia' || i.name === 'lugar')) {
     (form.elements.namedItem('lat') as HTMLInputElement).value = String(o.lat); (form.elements.namedItem('lon') as HTMLInputElement).value = String(o.lon); } });
   const cuenta = (sel: string) => () => form.querySelectorAll(sel).length;
@@ -439,12 +563,13 @@ export async function vistaServicio(c: Ctx, id: string) {
       personal_num: g('personal_num') || (nombres.size ? String(nombres.size) : ''), unidades: deTrip.length ? deTrip : S.unidades,
       tripulacion, vehiculos, apoyos, personas, observaciones: g('observaciones'),
       datos: { ...S.datos, folio_911: g('d_folio_911'), compania: g('d_compania'), kilos: g('d_kilos') },
+      recursos_p: { agua_litros: Number(g('r_agua_litros')) || 0, espuma_litros: Number(g('r_espuma_litros')) || 0, extintores: Number(g('r_extintores')) || 0, mangueras: Number(g('r_mangueras')) || 0, danos: g('r_danos') },
       jefe_servicio: g('f_jefe_servicio'), radio_operador: g('f_radio_operador'), jefe_guardia: g('f_jefe_guardia'),
     };
   };
   const guardar = async () => {
     if (!editable) return true;
-    try { await guardarServicio(id, recolectar()); return true; }
+    try { const d = recolectar(); const { recursos_p: rp, ...resto } = d; await guardarServicio(id, resto); await servicioParcialP(id, { recursos: rp }); notificar(id); return true; }
     catch (err) { c.aviso(c.errores[(err as Error).message] ?? 'No se pudo guardar el parte.', true); return false; }
   };
   form.addEventListener('submit', async (e) => { e.preventDefault(); if (await guardar()) { c.aviso('Parte guardado.'); vistaServicio(c, id); } });
@@ -484,10 +609,25 @@ export async function vistaServicio(c: Ctx, id: string) {
   });
   document.getElementById('concluir')?.addEventListener('click', async () => {
     if (!(await guardar())) return;
-    try { await cerrarServicio(id); c.aviso('Servicio concluido; unidades disponibles.'); vistaServicio(c, id); } catch (e) { c.aviso(c.errores[(e as Error).message] ?? 'No se pudo concluir.', true); }
+    try { await cerrarServicio(id); notificar(id); c.aviso('Servicio concluido; unidades disponibles.'); vistaServicio(c, id); } catch (e) { c.aviso(c.errores[(e as Error).message] ?? 'No se pudo concluir.', true); }
   });
   document.getElementById('reabrir')?.addEventListener('click', async () => {
     try { await reabrirServicio(id); vistaServicio(c, id); } catch (e) { c.aviso(c.errores[(e as Error).message] ?? 'No se pudo reabrir.', true); }
+  });
+  $('arriba').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  document.getElementById('autorizar')?.addEventListener('click', () => {
+    const { fondo, cerrar } = cajon(`${cabCajon('Autorización del Admin. Maestro', `Folio ${folioTxt(S)}`)}
+      <form class="bloque" autocomplete="off"><p class="tenue">El Admin. Maestro escribe aquí su correo y contraseña. Quedas autorizado(a) <b>30 minutos</b> para corregir este folio;
+        queda anotado en el control interno quién autorizó y quién corrigió. Tu sesión no se cierra.</p>
+        <label>Correo del Admin. Maestro<input type="email" name="correo" required autocomplete="off"></label>${campoClave('a-clave', 'Contraseña del Admin. Maestro')}
+        <p class="error-txt" id="a-err" hidden></p><button class="btn primario">Autorizar corrección</button></form>`, 'Autorización');
+    activarClaves(fondo);
+    fondo.querySelector('form')!.addEventListener('submit', async (e) => {
+      e.preventDefault(); const b = fondo.querySelector<HTMLButtonElement>('form button.primario')!; b.disabled = true; b.textContent = 'Verificando…';
+      const err = await autorizarEdicion(S.id, String(new FormData(e.target as HTMLFormElement).get('correo') ?? ''), valorClave(fondo, 'a-clave'));
+      if (err) { const x = fondo.querySelector<HTMLElement>('#a-err')!; x.textContent = err; x.hidden = false; b.disabled = false; b.textContent = 'Autorizar corrección'; return; }
+      cerrar(); c.aviso('Corrección autorizada por 30 minutos.'); vistaServicio(c, S.id);
+    });
   });
   document.getElementById('desbloquear')?.addEventListener('click', async () => {
     const motivo = prompt('¿Por qué se corrige este parte firmado? (queda en el control interno)'); if (!motivo?.trim()) return;
@@ -540,8 +680,15 @@ export async function vistaInformes(c: Ctx, modo: 'mes' | 'anio') {
     $('informe').innerHTML = `${cab(titulo)}
       <div class="inf-mes"><section class="tarjeta"><h3>${titulo}</h3><table class="tabla t-inf"><thead><tr><th>SERVICIOS</th><th>TOTAL</th></tr></thead><tbody>
         ${filas.map((cl) => `<tr style="background:${cl.color}"><td>${esc(cl.nombre)}</td><td>${n(cl.id, mesInf)}</td></tr>`).join('') || '<tr><td colspan="2" class="tenue">Sin servicios registrados.</td></tr>'}
-        <tr class="total"><td>TOTAL</td><td>${total}</td></tr></tbody></table></section>
+        <tr class="total"><td>TOTAL</td><td>${total}</td></tr>
+        ${(k.turnos ?? []).some((x) => x.mes === mesInf) ? `<tr><td>Turno de día (08:00–20:00)</td><td>${(k.turnos ?? []).filter((x) => x.mes === mesInf && x.turno === 'dia').reduce((p, q) => p + q.n, 0)}</td></tr>
+        <tr><td>Turno de noche (20:00–08:00)</td><td>${(k.turnos ?? []).filter((x) => x.mes === mesInf && x.turno === 'noche').reduce((p, q) => p + q.n, 0)}</td></tr>` : ''}</tbody></table></section>
       <section class="tarjeta"><h3>${titulo}</h3>${filas.length ? barras(filas.map((cl) => ({ etiqueta: cl.nombre, valor: n(cl.id, mesInf), color: cl.color }))) : '<p class="tenue">Sin datos.</p>'}</section></div>
+      ${(() => { const diasMes = new Date(anioInf, mesInf, 0).getDate(); const pre = `${anioInf}-${String(mesInf).padStart(2, '0')}-`;
+        const xs = [...Array(diasMes)].map((_, i) => ({ etiqueta: String(i + 1), valor: (k.dias ?? []).find((d) => d.fecha === pre + String(i + 1).padStart(2, '0'))?.n ?? 0 }));
+        const top = xs.slice().sort((p, q) => q.valor - p.valor).filter((x) => x.valor > 0).slice(0, 3);
+        return `<section class="tarjeta"><h3>Servicios por día · ${MESES_TXT[mesInf - 1]} ${anioInf}</h3>${columnas(xs, '#6E1C22', 190)}
+          ${top.length ? `<p class="tenue chica">Días con más servicios: ${top.map((x) => `<b>${x.etiqueta} de ${MESES_TXT[mesInf - 1].toLowerCase()}</b> (${x.valor})`).join(', ')}.</p>` : ''}</section>`; })()}
       <p class="tenue chica">Cuenta cada folio una vez. Los folios anulados no cuentan. Generado ${new Date().toLocaleString('es-MX')} · App SIMUB.</p>`;
     document.getElementById('i-xls')?.addEventListener('click', async () => {
       const xs = await servicios(new Date(anioInf, mesInf - 1, 1), new Date(anioInf, mesInf, 1));
@@ -559,6 +706,7 @@ export async function vistaInformes(c: Ctx, modo: 'mes' | 'anio') {
   $('informe').innerHTML = `${cab(`SERVICIOS ANUALES ${anioInf}`)}
     <div class="kpis"><div class="kpi"><span>Servicios ${anioInf}</span><b>${total.toLocaleString('es-MX')}</b></div>
       <div class="kpi"><span>Promedio mensual</span><b>${Math.round(total / Math.max(1, totMes.filter(Boolean).length))}</b></div>
+      <div class="kpi"><span>Día / noche</span><b>${(k.turnos ?? []).filter((x) => x.turno === 'dia').reduce((p, q) => p + q.n, 0)} / ${(k.turnos ?? []).filter((x) => x.turno === 'noche').reduce((p, q) => p + q.n, 0)}</b></div>
       <div class="kpi"><span>Tiempo típico de servicio</span><b>${k.minutos_promedio != null ? dur(k.minutos_promedio) : '—'}</b></div>
       <div class="kpi"><span>Con otras corporaciones</span><b>${apoyos.length ? apoyos.reduce((p, q) => Math.max(p, q[1]), 0) : 0}</b><small class="tenue">máx. con una misma corporación</small></div></div>
     <section class="tarjeta"><h3>Servicios anuales ${anioInf}</h3><div class="tabla-caja"><table class="tabla t-inf t-anual"><thead><tr><th>SERVICIOS</th>${MESES_TXT.map((m) => `<th>${m.slice(0, 3).toUpperCase()}</th>`).join('')}<th>TOTAL</th></tr></thead><tbody>
@@ -608,5 +756,23 @@ export function activarImportar(c: Ctx) {
     }
     registrarImportacion({ archivo: arch.files?.[0]?.name, importados: ok, omitidos: omit, hojas: lectura.hojas }).catch(() => {});
     res.innerHTML = `<p class="ok-txt">Listo: ${ok.toLocaleString('es-MX')} servicios importados o actualizados${omit ? `, ${omit} omitidos (ya capturados en la app con ese folio)` : ''}. Revisa el <a href="#anual">informe anual</a>.</p>`;
+  });
+}
+
+// ================================================================ guardia del turno y pase de lista
+export async function paseDeLista(c: Ctx, g: { turno: string; jefe: string | null; personal: string[] } | undefined, listo: () => void) {
+  const per = await tabla<{ nombre: string; cargo: string | null; activo: boolean }>('personal', 'nombre').catch(() => []);
+  fuente('personal', () => per.filter((p) => p.activo).map((p) => ({ n: p.nombre, t: p.cargo ?? '' })));
+  const turno = new Date().getHours() >= 8 && new Date().getHours() < 20 ? 'día' : 'noche';
+  const { fondo, cerrar } = cajon(`${cabCajon(`Guardia del turno de ${turno}`, 'Jefe de guardia y pase de lista')}
+    <form class="bloque" id="f-guardia"><label>Jefe de guardia${buscador('jefe', g?.jefe ?? '', 'personal', 'required placeholder="Toca y escribe el nombre"')}</label>
+      <label>Personal de guardia (pase de lista)</label>${multi('personal', [], g?.personal ?? [], 'Toca y escribe el nombre', false, [], 'personal')}
+      <p class="tenue chica">El jefe de guardia se pone solo en los partes de este turno. Cada persona suma 12 horas de guardia.</p>
+      <button class="btn primario">Guardar</button></form>`, 'Guardia');
+  activarBuscadores(fondo); activarMulti(fondo);
+  fondo.querySelector('form')!.addEventListener('submit', async (e) => {
+    e.preventDefault(); const fd = new FormData(e.target as HTMLFormElement);
+    try { await guardarGuardia(String(fd.get('jefe') ?? ''), valoresMulti(fd.get('personal'))); c.aviso('Guardia registrada.'); cerrar(); listo(); }
+    catch { c.aviso('No se pudo guardar la guardia.', true); }
   });
 }

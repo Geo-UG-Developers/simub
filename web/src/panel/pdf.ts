@@ -124,6 +124,7 @@ export async function servicioPdf(s: Servicio, nombreClase: string, escudoUrl: s
   t(M + 24, 25, 'Falsa alarma', 9); caja(M + 45, 21.5, 4.5, 4.5); if (s.falsa_alarma) t(M + 46.1, 25.2, 'X', 9, true);
   t(M + 70, 25, 'Fecha', 9); val(M + 81, 25, 40, new Date(`${s.fecha}T12:00:00`).toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }), 9.5);
   t(M + 140, 25, 'Folio', 9); val(M + 150, 25, 40, folio, 10);
+  if (s.turno) { t(M + 112, 25, 'Turno', 9); val(M + 123, 25, 15, s.turno === 'dia' ? 'Día' : 'Noche', 9.5); }
 
   let y = 32;
   titulo(M, y, CW, 'Cronología (hora de:)'); y += 6;
@@ -176,6 +177,10 @@ export async function servicioPdf(s: Servicio, nombreClase: string, escudoUrl: s
   y += 92;
   caja(M, y, CW, 8); t(M + 2, y + 5.3, 'Hora de inicio'); val(M + 25, y + 5.3, 30, hhmm(s.h_despacho)); t(M + 95, y + 5.3, 'Hora de término'); val(M + 120, y + 5.3, 30, hhmm(s.h_base));
   t(M + 150, y + 5.3, 'Folio 911'); val(M + 166, y + 5.3, 30, s.datos?.folio_911);
+  const rr = s.recursos ?? {};
+  if (Object.values(rr).some((x) => x)) { y += 9; caja(M, y, CW, 7); t(M + 2, y + 4.8, 'Recursos:', 8);
+    val(M + 18, y + 4.8, CW - 20, [rr.agua_litros ? `Agua ${rr.agua_litros} L` : '', rr.espuma_litros ? `Espuma ${rr.espuma_litros} L` : '', rr.extintores ? `Extintores ${rr.extintores}` : '',
+      rr.mangueras ? `Mangueras ${rr.mangueras}` : '', rr.danos ? `Daños: ${rr.danos}` : ''].filter(Boolean).join(' · '), 8); }
 
   // ---------- página 2
   doc.addPage(); y = 14;

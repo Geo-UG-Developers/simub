@@ -3,10 +3,13 @@
 export interface Clima {
   temp: number; humedad: number; viento: number; rachas: number; codigo: number;
   maxT: number; minH: number; maxV: number; lluvia: number; en: number;
+  direccion?: number; uv?: number; amanecer?: string; atardecer?: string;
+  horas?: { h: string; t: number; hum: number; v: number; p: number; k: number }[];
 }
 const URL_CLIMA = 'https://api.open-meteo.com/v1/forecast?latitude=21.019&longitude=-101.257'
-  + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code'
-  + '&daily=temperature_2m_max,relative_humidity_2m_min,wind_speed_10m_max,precipitation_probability_max'
+  + '&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code,wind_direction_10m'
+  + '&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation_probability,weather_code'
+  + '&daily=temperature_2m_max,relative_humidity_2m_min,wind_speed_10m_max,precipitation_probability_max,sunrise,sunset,uv_index_max'
   + '&timezone=America%2FMexico_City&forecast_days=1';
 
 let cache: Clima | null = null;
@@ -16,7 +19,10 @@ export async function clima(): Promise<Clima | null> {
     const j = await (await fetch(URL_CLIMA)).json();
     cache = { temp: j.current.temperature_2m, humedad: j.current.relative_humidity_2m, viento: j.current.wind_speed_10m, rachas: j.current.wind_gusts_10m,
       codigo: j.current.weather_code, maxT: j.daily.temperature_2m_max[0], minH: j.daily.relative_humidity_2m_min[0], maxV: j.daily.wind_speed_10m_max[0],
-      lluvia: j.daily.precipitation_probability_max[0] ?? 0, en: Date.now() };
+      lluvia: j.daily.precipitation_probability_max[0] ?? 0, en: Date.now(),
+      direccion: j.current.wind_direction_10m, uv: j.daily.uv_index_max?.[0], amanecer: j.daily.sunrise?.[0], atardecer: j.daily.sunset?.[0],
+      horas: (j.hourly?.time ?? []).map((h: string, i: number) => ({ h, t: j.hourly.temperature_2m[i], hum: j.hourly.relative_humidity_2m[i], v: j.hourly.wind_speed_10m[i],
+        p: j.hourly.precipitation_probability[i] ?? 0, k: j.hourly.weather_code[i] })) };
     return cache;
   } catch { return cache; }
 }
@@ -56,4 +62,54 @@ export function detalleClima(c: Clima | null) {
     <p class="riesgo-grande ${r.nivel.cls}">Riesgo de incendio: <b>${r.nivel.txt}</b> (${r.n} de 3)</p>
     <p class="tenue chica">Regla de campo usada por CONAFOR para combatientes. Datos: Open-Meteo, se actualizan cada 15 min.
     Es una guía rápida, no sustituye el pronóstico oficial de peligro de incendio.</p>`;
+}
+
+// ---------------------------------------------------------------- tarjeta grande del Centro de mando
+const ICONOS: Record<string, string> = {
+  sol: '<circle cx="24" cy="24" r="9" fill="#F5B301"/><g stroke="#F5B301" stroke-width="3" stroke-linecap="round"><path d="M24 4v6M24 38v6M4 24h6M38 24h6M9.9 9.9l4.2 4.2M33.9 33.9l4.2 4.2M9.9 38.1l4.2-4.2M33.9 14.1l4.2-4.2"/></g>',
+  luna: '<path d="M30 6a16 16 0 1 0 12 26A13 13 0 0 1 30 6z" fill="#8C9CC8"/>',
+  parcial: '<circle cx="18" cy="17" r="8" fill="#F5B301"/><g stroke="#F5B301" stroke-width="2.6" stroke-linecap="round"><path d="M18 3v4M4 17h4M8 7l2.8 2.8M28 7l-2.8 2.8"/></g><path d="M15 40h22a8 8 0 0 0 0-16 11 11 0 0 0-21 3 6.5 6.5 0 0 0-1 13z" fill="#C9D2DC"/>',
+  parcialNoche: '<path d="M22 4a11 11 0 1 0 9 17A9 9 0 0 1 22 4z" fill="#8C9CC8"/><path d="M15 40h22a8 8 0 0 0 0-16 11 11 0 0 0-21 3 6.5 6.5 0 0 0-1 13z" fill="#C9D2DC"/>',
+  nube: '<path d="M12 38h25a9 9 0 0 0 0-18 12 12 0 0 0-23 3 7.5 7.5 0 0 0-2 15z" fill="#AEB8C4"/>',
+  lluvia: '<path d="M12 30h25a9 9 0 0 0 0-18 12 12 0 0 0-23 3 7.5 7.5 0 0 0-2 15z" fill="#8F9BA8"/><g stroke="#1E88E5" stroke-width="3" stroke-linecap="round"><path d="M16 35l-2 6M25 35l-2 6M34 35l-2 6"/></g>',
+  tormenta: '<path d="M12 28h25a9 9 0 0 0 0-18 12 12 0 0 0-23 3 7.5 7.5 0 0 0-2 15z" fill="#6E7883"/><path d="M26 26l-6 10h6l-3 9 9-12h-6l3-7z" fill="#F5B301"/>',
+};
+const icono = (k: number, noche = false) => {
+  const n = k === 0 ? (noche ? 'luna' : 'sol') : k <= 2 ? (noche ? 'parcialNoche' : 'parcial') : k <= 48 ? 'nube' : k <= 82 ? 'lluvia' : 'tormenta';
+  return `<svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true">${ICONOS[n]}</svg>`;
+};
+const PUNTOS = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+const rumbo = (g?: number) => g == null ? '' : PUNTOS[Math.round(g / 45) % 8];
+const hh = (f?: string) => f ? f.slice(11, 16) : '—';
+/** Pronóstico del día en tres partes, con el clima que más se repite y la temperatura máxima/mínima de cada una. */
+function partes(c: Clima) {
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const h = (c.horas ?? []).filter((x) => x.h.startsWith(hoy));
+  return ([['Mañana', 6, 12, false], ['Tarde', 12, 19, false], ['Noche', 19, 24, true]] as const).map(([t, a, b, noche]) => {
+    const xs = h.filter((x) => { const n = +x.h.slice(11, 13); return n >= a && n < b; });
+    if (!xs.length) return { t, txt: '—', ic: '', max: null as number | null, min: null as number | null, p: 0, v: 0, hum: 0, ahora: false };
+    const k = Math.max(...xs.map((x) => x.k)) > 50 ? Math.max(...xs.map((x) => x.k)) : xs.map((x) => x.k).sort((p, q) => xs.filter((x) => x.k === q).length - xs.filter((x) => x.k === p).length)[0];
+    const hora = +new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Mexico_City', hour: '2-digit', hour12: false });
+    return { t, txt: cielo(k), ic: icono(k, noche), max: Math.max(...xs.map((x) => x.t)), min: Math.min(...xs.map((x) => x.t)), p: Math.max(...xs.map((x) => x.p)),
+      v: Math.max(...xs.map((x) => x.v)), hum: Math.min(...xs.map((x) => x.hum)), ahora: hora >= a && hora < b };
+  });
+}
+export function widgetClima(c: Clima | null) {
+  if (!c) return '<section class="tarjeta wclima"><p class="tenue">Clima no disponible por ahora (se reintenta cada 15 min).</p></section>';
+  const r = regla303030(c), noche = (() => { const h = new Date().getHours(); return h < 7 || h >= 19; })();
+  const dato = (etq: string, v: string, u: string, ok?: boolean) => `<div class="wc-dato ${ok ? 'cumple' : ''}"><span>${etq}</span><b>${v}<small>${u}</small></b></div>`;
+  return `<section class="tarjeta wclima">
+    <div class="wc-riesgo ${r.nivel.cls}" data-clima role="button" tabindex="0" title="Ver detalle de la regla 30-30-30">
+      <span>Riesgo de incendio</span><b>${r.nivel.txt}</b><small>${r.n} de 3 condiciones (30-30-30)</small>
+      <ul>${[['> 30 °C', `${Math.round(r.t)} °C`], ['< 30 % humedad', `${Math.round(r.h)} %`], ['> 30 km/h viento', `${Math.round(r.v)} km/h`]]
+        .map(([t, v], i) => `<li class="${r.cumple[i] ? 'si' : ''}">${r.cumple[i] ? '●' : '○'} ${t}: <b>${v}</b></li>`).join('')}</ul></div>
+    <div class="wc-ahora"><div class="wc-cielo">${icono(c.codigo, noche)}<div><b class="wc-temp">${Math.round(c.temp)}<small>°C</small></b><span>${cielo(c.codigo)} · ahora</span></div></div>
+      <div class="wc-datos">${dato('Temperatura', String(Math.round(c.temp)), '°C', c.temp > 30)}${dato('Humedad', String(Math.round(c.humedad)), '%', c.humedad < 30)}
+        ${dato(`Viento ${rumbo(c.direccion)}`, String(Math.round(c.viento)), 'km/h', c.viento > 30)}${dato('Rachas', String(Math.round(c.rachas)), 'km/h', c.rachas > 38)}</div></div>
+    <div class="wc-pron">${partes(c).map((p) => `<div class="wc-parte ${p.ahora ? 'ahora' : ''}"><span class="wc-pt">${p.t}</span>${p.ic}<b>${p.max != null ? `${Math.round(p.max)}° / ${Math.round(p.min!)}°` : '—'}</b>
+        <small>${p.txt}</small><small>💧 ${p.p} % · 💨 ${Math.round(p.v)} km/h</small></div>`).join('')}</div>
+    <div class="wc-extra"><span>Hoy máx. <b>${Math.round(c.maxT)} °C</b></span><span>Humedad mín. <b>${Math.round(c.minH)} %</b></span><span>Viento máx. <b>${Math.round(c.maxV)} km/h</b></span>
+      <span>Lluvia <b>${c.lluvia} %</b></span>${c.uv != null ? `<span>UV máx. <b>${Math.round(c.uv)}</b></span>` : ''}<span>☀ ${hh(c.amanecer)} · 🌙 ${hh(c.atardecer)}</span>
+      <span class="tenue">Open-Meteo · ${new Date(c.en).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}</span></div>
+  </section>`;
 }

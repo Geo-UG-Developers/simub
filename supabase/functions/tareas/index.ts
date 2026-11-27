@@ -4,9 +4,10 @@ import { chatDe, db, PANEL_URL, tg, tgFoto } from '../_shared/servicios.ts';
 import { datosAlerta, primeraFoto, responderAlerta } from '../_shared/alerta.ts';
 import { avisarNoticias, enviarAvisos } from '../_shared/avisos.ts';
 import { textoAlerta } from '../_shared/mensajes.ts';
+import { resumenTurno } from '../_shared/servicio_tg.ts';
 
 Deno.serve(async () => {
-  const r = { escalados: 0, avisos: 0, noticias: 0, voluntarios: 0 };
+  const r = { escalados: 0, avisos: 0, noticias: 0, voluntarios: 0, resumen: false };
   try {
     const { data, error } = await db.rpc('escalar_pendientes');
     if (error) throw error;
@@ -28,6 +29,7 @@ Deno.serve(async () => {
   } catch (e) { console.error('escalamiento', e); }
   try { r.avisos = await enviarAvisos(); } catch (e) { console.error('avisos', e); }
   try { r.noticias = await avisarNoticias(); } catch (e) { console.error('noticias', e); }
+  try { r.resumen = await resumenTurno(); } catch (e) { console.error('resumen turno', e); }
   // Solicitudes de voluntariado: aviso breve al grupo de comunicación (sin teléfono ni correo).
   try {
     const { data } = await db.rpc('voluntarios_por_avisar');

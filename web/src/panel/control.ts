@@ -2,10 +2,12 @@
 // auditoría de ajustes y correcciones, copias de seguridad en la computadora y solicitudes de voluntariado.
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_KEY, SUPABASE_URL } from '../api';
+import { activarClaves, campoClave, valorClave } from './clave';
+import { avisarVentanas } from './ventanas';
 import { CORPORACIONES } from './catalogo';
 import { descargar, escribirExcel, type Celda } from './excel';
 import {
-  borrarAuditoria, control, dbp, estadoVoluntario, latido, respaldo, sesionCerrar, sesionIniciar, voluntarios, yo, type Yo,
+  borrarAuditoria, control, dbp, entrar, estadoVoluntario, latido, respaldo, sesionCerrar, sesionIniciar, textoAcceso, voluntarios, yo, type Yo,
 } from './datos';
 import type { Ctx } from './mando';
 
@@ -44,23 +46,24 @@ export function cambioTurno(c: Ctx, actual: Yo, alTerminar: () => void) {
   const fondo = document.createElement('div'); fondo.className = 'cajon-fondo';
   fondo.innerHTML = `<aside class="cajon" role="dialog" aria-modal="true" aria-label="Cambio de turno">
     <div class="det-cab"><div><h2>Cambio de turno</h2><span class="tenue">Entrega: <b>${esc(actual.nombre)}</b></span></div><button class="btn cerrar-x" data-x aria-label="Cerrar">✕</button></div>
-    <form class="bloque" id="f-turno"><p class="tenue">Quien recibe el turno entra con su propio correo y contraseña. El cambio queda en el control interno.</p>
+    <form class="bloque" id="f-turno" autocomplete="off"><p class="tenue">Quien recibe el turno entra con su propio correo y contraseña. El cambio queda en el control interno.</p>
       <label>Correo de quien recibe<input type="email" name="correo" required autocomplete="off"></label>
-      <label>Su contraseña<input type="password" name="clave" required minlength="8" autocomplete="off"></label>
+      ${campoClave('t-clave', 'Su contraseña')}
       <p class="error-txt" id="t-err" hidden></p>
       <button class="btn primario" type="submit">Recibir turno</button></form></aside>`;
   document.body.appendChild(fondo);
   const cerrar = () => fondo.remove();
   fondo.querySelector('[data-x]')!.addEventListener('click', cerrar);
   fondo.addEventListener('click', (e) => { if (e.target === fondo) cerrar(); });
-  (fondo.querySelector('input') as HTMLInputElement).focus();
+  activarClaves(fondo); (fondo.querySelector('input') as HTMLInputElement).focus();
   fondo.querySelector('form')!.addEventListener('submit', async (e) => {
     e.preventDefault(); const fd = new FormData(e.target as HTMLFormElement); const err = $('t-err'); err.hidden = true;
     const b = fondo.querySelector<HTMLButtonElement>('button[type=submit]')!; b.disabled = true; b.textContent = 'Verificando…';
     // 1) se verifica a quien recibe con un cliente aparte (si falla, el turno actual sigue intacto)
     const temp = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await temp.auth.signInWithPassword({ email: String(fd.get('correo')).trim(), password: String(fd.get('clave')) });
-    if (error || !data.session) { err.textContent = 'Correo o contraseña incorrectos.'; err.hidden = false; b.disabled = false; b.textContent = 'Recibir turno'; return; }
+    const r = await entrar(String(fd.get('correo')).trim(), valorClave(fondo, 't-clave'), temp);
+    const { data } = await temp.auth.getSession();
+    if (!r.ok || !data.session) { err.textContent = textoAcceso(r); err.hidden = false; b.disabled = false; b.textContent = 'Recibir turno'; return; }
     // 2) se cierra la sesión de quien entrega y 3) se pasa la sesión a quien recibe
     const anterior = sesion?.id ?? null;
     await terminarSesion('cambio_turno');
@@ -68,7 +71,7 @@ export function cambioTurno(c: Ctx, actual: Yo, alTerminar: () => void) {
     const nuevo = await yo().catch(() => null);
     if (!nuevo) { c.aviso('Esa cuenta no tiene permiso en el panel. Pide al administrador que la dé de alta.', true); location.reload(); return; }
     await arrancarSesion(data.session.user.id, anterior);
-    cerrar(); c.aviso(`Turno recibido por ${nuevo.nombre}.`); alTerminar();
+    cerrar(); c.aviso(`Turno recibido por ${nuevo.nombre}.`); avisarVentanas('sesion'); alTerminar();
   });
 }
 
@@ -97,11 +100,11 @@ export async function vistaControl(c: Ctx) {
       return v && typeof v === 'object' && 'despues' in (v as object) ? `${esc(k)}: ${esc(JSON.stringify((v as { antes: unknown }).antes)).slice(0, 40)} → ${esc(JSON.stringify((v as { despues: unknown }).despues)).slice(0, 40)}` : `${esc(k)}: ${esc(JSON.stringify(v)).slice(0, 60)}`; }).join('<br>');
   };
   $('ctl').innerHTML = `
-    <section class="tarjeta"><h3>Sesiones y turnos</h3><div class="tabla-caja"><table class="tabla"><thead><tr><th>Persona</th><th>Cargo</th><th>Equipo</th><th>Entró</th><th>Salió</th><th>Tiempo</th><th>Cómo terminó</th><th>Folios capturados</th></tr></thead><tbody>
-      ${x.sesiones.map((s) => `<tr><td><b>${esc(s.nombre)}</b>${s.turno_de ? `<br><small class="tenue">recibió de ${esc(s.turno_de)}</small>` : ''}</td><td>${esc(s.rol)}</td><td>${esc(s.equipo ?? '')}</td>
+    <section class="tarjeta"><h3>Sesiones y turnos</h3><div class="tabla-caja"><table class="tabla"><thead><tr><th>Persona</th><th>Cargo</th><th>Turno</th><th>Equipo</th><th>Entró</th><th>Salió</th><th>Tiempo</th><th>Cómo terminó</th><th>Folios capturados</th></tr></thead><tbody>
+      ${x.sesiones.map((s) => `<tr><td><b>${esc(s.nombre)}</b>${s.turno_de ? `<br><small class="tenue">recibió de ${esc(s.turno_de)}</small>` : ''}</td><td>${esc(s.rol)}</td><td>${(() => { const h = new Date(s.inicio).getHours(); return h >= 8 && h < 20 ? 'Día' : 'Noche'; })()}</td><td>${esc(s.equipo ?? '')}</td>
         <td class="nw">${fh(s.inicio)}</td><td class="nw">${s.fin ? fh(s.fin) : '<em class="pill p-verde">En línea</em>'}</td><td class="nw">${dur(s.minutos)}</td>
         <td>${esc({ cierre: 'Cerró sesión', cambio_turno: 'Cambio de turno', inactividad: 'Sin actividad', nueva_sesion: 'Nueva sesión' }[s.motivo ?? ''] ?? '')}</td>
-        <td>${s.folios.map((f) => `<code>${esc(f)}</code>`).join(' ') || '—'}</td></tr>`).join('') || '<tr><td colspan="8" class="tenue">Sin sesiones en el periodo.</td></tr>'}</tbody></table></div></section>
+        <td>${s.folios.map((f) => `<code>${esc(f)}</code>`).join(' ') || '—'}</td></tr>`).join('') || '<tr><td colspan="9" class="tenue">Sin sesiones en el periodo.</td></tr>'}</tbody></table></div></section>
     <section class="tarjeta"><div class="fila-tit"><h3>Movimientos en ajustes y registros</h3>${x.super ? '<button class="btn chico rojo" id="aud-borrar" disabled>Borrar seleccionados</button>' : '<span class="tenue chica">Solo el desarrollador puede borrar entradas.</span>'}</div>
       <div class="tabla-caja"><table class="tabla"><thead><tr>${x.super ? '<th></th>' : ''}<th>Fecha</th><th>Quién</th><th>Acción</th><th>Dónde</th><th>Registro</th><th>Detalle</th></tr></thead><tbody>
       ${x.auditoria.map((a) => `<tr>${x.super ? `<td><input type="checkbox" data-aud="${a.id}"></td>` : ''}<td class="nw">${fh(a.en)}</td><td>${esc(a.quien ?? 'sistema')}</td><td>${esc(ACC[a.accion] ?? a.accion)}</td>

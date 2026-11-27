@@ -61,7 +61,9 @@ export type Accion =
   | { tipo: 'estado' | 'confirmar'; id: string; estado: Estado }
   | { tipo: 'deshacer' | 'cancelar'; id: string }
   | { tipo: 'noticia'; op: string; arg: string }
-  | { tipo: 'necesidad'; op: string; arg: string };
+  | { tipo: 'necesidad'; op: string; arg: string }
+  | { tipo: 'voy'; id: string }
+  | { tipo: 'ubicacion_off' };
 
 export function leerBoton(data: string | undefined): Accion | null {
   if (!data) return null;
@@ -71,6 +73,9 @@ export function leerBoton(data: string | undefined): Accion | null {
   if (n) return { tipo: n[1] === 'u' ? 'deshacer' : 'cancelar', id: n[2] };
   const t = /^n\|(cat|pub|can|des|ocu)\|?([\w-]*)$/.exec(data);
   if (t) return { tipo: 'noticia', op: t[1], arg: t[2] };
+  const v = /^v\|([0-9a-f-]{36})$/.exec(data);
+  if (v) return { tipo: 'voy', id: v[1] };
+  if (data === 'u|off') return { tipo: 'ubicacion_off' };
   const q = /^q\|(u|d|a|ok)\|?(\d*)$/.exec(data);
   if (q) return { tipo: 'necesidad', op: q[1], arg: q[2] };
   return null;
