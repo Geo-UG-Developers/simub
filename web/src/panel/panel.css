@@ -403,3 +403,5 @@ input.corto { max-width: 80px; min-width: 60px !important; }
 .aj-det summary { cursor: pointer; padding: 4px 0; } .aj-sub { margin: 6px 0 0; }
 .aj-inv { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .aj-alta { margin-bottom: 10px; }
+
+.tel-caja { display: grid; grid-template-columns: minmax(110px, 40%) 1fr; gap: 8px; } .tel-caja select { width: 100%; }

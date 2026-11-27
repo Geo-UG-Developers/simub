@@ -740,7 +740,7 @@ export function activarImportar(c: Ctx) {
     lectura = null; btn.disabled = true; const f = arch.files?.[0]; if (!f) return;
     res.innerHTML = '<p class="tenue">Leyendo…</p>';
     try {
-      lectura = leerHistorico(leerExcel(new Uint8Array(await f.arrayBuffer())));
+      lectura = leerHistorico(leerExcel(new Uint8Array(await f.arrayBuffer())), Number(f.name.match(/(20\d{2})/)?.[1]) || null);
       const porMes: Record<string, number> = {}; lectura.filas.forEach((x) => { const k = x.fecha.slice(0, 7); porMes[k] = (porMes[k] ?? 0) + 1; });
       res.innerHTML = `<p><b>${lectura.filas.length.toLocaleString('es-MX')}</b> servicios en ${lectura.hojas.length} hojas: ${Object.entries(porMes).map(([k, v]) => `${k} (${v})`).join(', ')}.</p>
         ${lectura.avisos.length ? `<details><summary>${lectura.avisos.length} avisos (folios corregidos o repetidos)</summary><ul class="chica">${lectura.avisos.map((a) => `<li>${esc(a)}</li>`).join('')}</ul></details>` : ''}`;

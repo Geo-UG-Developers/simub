@@ -72,18 +72,42 @@ const unidadesDe = (v: Celda) => String(v ?? '').toUpperCase().split(/\s*(?:\/|,
   .filter((u) => u && u !== 'N/A' && u !== 'X');
 
 /** Lee las hojas «ENERO 2026», «FEBRERO 2026»… (columnas FOLIO, FECHA, SERVICIO, TIPO, LUGAR, ÁREA, EQUIPO, PERSONAL, TIEMPO, TIEMPO2). */
-export function leerHistorico(hojas: Hoja[]): ResultadoLectura {
+/** Mes y año de una hoja: «SEPTIEMBRE 2024», «JUNIO- 2021», «AGOSTO 2021 -», «OCTUBRE» (sin año), «SEPT 2023»… */
+function mesDeHoja(nombre: string): { mes: number; anio: number | null } | null {
+  const t = norm(nombre).replace(/[^A-Z0-9]+/g, ' ').trim();
+  if (/^GRAFIC|^SERVICIOS|^AGRUPAC|^PORCENT|^HOJA/.test(t)) return null;
+  const m = t.match(/^([A-Z]+)(?: (\d{2,4}))?$/); if (!m) return null;
+  const pal = m[1] === 'SETIEMBRE' ? 'SEPTIEMBRE' : m[1];
+  const mes = MESES.findIndex((x) => x === pal || (pal.length >= 3 && x.startsWith(pal))) + 1;
+  if (!mes) return null;
+  const a = m[2] ? (m[2].length === 2 ? 2000 + +m[2] : +m[2]) : null;
+  return { mes, anio: a };
+}
+/** Fila de encabezados: la primera de las 15 de arriba que tenga una celda que empiece con FOLIO. */
+const filaEncabezados = (filas: unknown[][]) => filas.slice(0, 15).findIndex((f) => (f ?? []).some((x) => /^FOLIO/.test(norm(x))));
+const filasConDatos = (h: Hoja, cab: number) => h.filas.slice(cab + 1).filter((f) => f && f.some((x) => x != null && String(x).trim() !== '')).length;
+
+export function leerHistorico(hojas: Hoja[], anioArchivo: number | null = null): ResultadoLectura {
   const filas: FilaImportada[] = []; const avisos: string[] = []; const usadas: string[] = [];
   const porClave = new Map<string, FilaImportada>();
+  // Año del libro: el que más se repite en los nombres de las hojas (o el del nombre del archivo).
+  const anios = hojas.map((h) => mesDeHoja(h.nombre)?.anio ?? Number(norm(h.nombre).match(/(20\d{2})/)?.[1] ?? 0)).filter(Boolean) as number[];
+  const anioLibro = anioArchivo ?? (anios.length ? anios.sort((a, b) => anios.filter((x) => x === b).length - anios.filter((x) => x === a).length)[0] : null);
+  // Si dos hojas son del mismo mes (p. ej. «JUNIO 2021» vacía y «JUNIO- 2021» con datos), se usa la que tiene más filas.
+  const elegidas = new Map<string, { h: Hoja; cab: number; n: number; mes: number; anio: number }>();
   for (const h of hojas) {
-    const m = norm(h.nombre).match(/^([A-Z]+) (\d{4})$/);
-    if (!m || !MESES.includes(m[1])) continue;
-    const anio = +m[2], mes = MESES.indexOf(m[1]) + 1;
-    const cab = h.filas.findIndex((f) => norm(f[0]) === 'FOLIO');
+    const mh = mesDeHoja(h.nombre); if (!mh) continue;
+    const anio = mh.anio ?? anioLibro; if (!anio) { avisos.push(`${h.nombre}: no se sabe el año; ponlo en el nombre de la hoja.`); continue; }
+    const cab = filaEncabezados(h.filas);
     if (cab < 0) { avisos.push(`${h.nombre}: no encontré la fila de encabezados (FOLIO, FECHA…).`); continue; }
+    const k = `${anio}-${mh.mes}`, n = filasConDatos(h, cab), prev = elegidas.get(k);
+    if (!prev || n > prev.n) elegidas.set(k, { h, cab, n, mes: mh.mes, anio });
+  }
+  for (const { h, cab, mes, anio } of [...elegidas.values()].sort((a, b) => a.anio - b.anio || a.mes - b.mes)) {
     const col = (re: RegExp, def: number) => { const i = h.filas[cab].findIndex((x) => re.test(norm(x))); return i < 0 ? def : i; };
-    const C = { folio: col(/^FOLIO/, 0), fecha: col(/^FECHA/, 1), serv: col(/^SERVICIO/, 2), tipo: col(/^TIPO/, 3), lugar: col(/^LUGAR/, 4),
-      area: col(/^AREA/, 5), equipo: col(/^EQUIPO|^UNIDAD/, 6), personal: col(/^PERSONAL/, 7), t1: col(/^TIEMPO$/, 8), t2: col(/^TIEMPO ?2/, 9) };
+    const o = Math.max(0, h.filas[cab].findIndex((x) => /^FOLIO/.test(norm(x))));   // hojas que empiezan en la columna B
+    const C = { folio: o, fecha: col(/^FECHA/, o + 1), serv: col(/^SERVICIO/, o + 2), tipo: col(/^TIPO/, o + 3), lugar: col(/^LUGAR/, o + 4),
+      area: col(/^AREA/, o + 5), equipo: col(/^EQUIPO|^UNIDAD/, o + 6), personal: col(/^PERSONAL/, o + 7), t1: col(/^TIEMPO$/, o + 8), t2: col(/^TIEMPO ?2/, o + 9) };
     usadas.push(h.nombre);
     let prevFolio = 0, prevDia = 1, n = 0;
     for (const f of h.filas.slice(cab + 1)) {

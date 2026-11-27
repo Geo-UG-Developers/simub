@@ -186,10 +186,16 @@ export async function invitarAGrupos(ids: number[], grupos: ('alertas' | 'intern
 
 /** Alta automática: la persona comparte SU número con el bot y queda vinculada si coincide con un teléfono del personal. */
 export async function vincularPorTelefono(chat: number, telefono: string): Promise<{ nombre: string; id: number } | null> {
-  const diez = telefono.replace(/\D/g, '').slice(-10);
-  if (diez.length !== 10) return null;
+  // Telegram manda el número con lada internacional (p. ej. 5214731234567 o 4915112345678).
+  const dig = telefono.replace(/\D/g, '');
+  if (dig.length < 8) return null;
   const { data: ps } = await db.from('personal').select('id, nombre, nombre_corto, telefono').eq('activo', true).not('telefono', 'is', null);
-  const p = (ps ?? []).find((x) => String(x.telefono).replace(/\D/g, '').slice(-10) === diez);
+  const coincide = (guardado: string) => {
+    const g = guardado.replace(/\D/g, '');
+    if (guardado.trim().startsWith('+') && !guardado.trim().startsWith('+52')) return dig === g;   // otro país: número completo con lada
+    return g.slice(-10).length === 10 && dig.slice(-10) === g.slice(-10);   // México: los últimos 10 dígitos
+  };
+  const p = (ps ?? []).find((x) => coincide(String(x.telefono)));
   if (!p) return null;
   await db.from('personal').update({ tg_chat_id: null }).eq('tg_chat_id', chat).neq('id', p.id);
   await db.from('personal').update({ tg_chat_id: chat }).eq('id', p.id);

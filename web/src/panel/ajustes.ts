@@ -92,7 +92,18 @@ function confirmar(titulo: string, texto: string, boton: string, alAceptar: () =
     try { await alAceptar(); cerrar(); } catch { b.disabled = false; b.textContent = boton; }
   });
 }
-const tel10 = (t: string) => t.replace(/\D/g, '').replace(/^52(?=\d{10}$)/, '');
+const tel10 = (t: string) => /^\s*\+(?!52)/.test(t) ? '+' + t.replace(/\D/g, '') : t.replace(/\D/g, '').replace(/^52(?=\d{10}$)/, '');
+// Teléfonos: de México se guardan con 10 dígitos; de otro país, con «+» y su lada internacional (p. ej. +4915112345678).
+const LADAS: [string, string][] = [['52', 'México +52'], ['1', 'EE. UU. / Canadá +1'], ['49', 'Alemania +49'], ['34', 'España +34'], ['57', 'Colombia +57'],
+  ['54', 'Argentina +54'], ['56', 'Chile +56'], ['51', 'Perú +51'], ['502', 'Guatemala +502'], ['33', 'Francia +33'], ['44', 'Reino Unido +44'], ['39', 'Italia +39']];
+const separarTel = (t: string | null | undefined): [string, string] => {
+  const v = String(t ?? '').trim(); if (!v.startsWith('+')) return ['52', v.replace(/\D/g, '')];
+  const d = v.replace(/\D/g, ''); const l = LADAS.map(([k]) => k).sort((a, b) => b.length - a.length).find((k) => d.startsWith(k)) ?? d.slice(0, 2);
+  return [l, d.slice(l.length)];
+};
+/** Número para wa.me (lada + número, solo dígitos). */
+const numWa = (t: string | null | undefined) => { const [l, n] = separarTel(t); return n.length >= 6 ? l + n : ''; };
+const telVisible = (t: string | null | undefined) => { const [l, n] = separarTel(t); return l === '52' ? n : `+${l} ${n}`; };
 
 // ---------------------------------------------------------------- secciones
 type Pintor = (c: Ctx, cont: HTMLElement, refrescar: () => void) => Promise<void>;
@@ -177,7 +188,7 @@ const PINTORES: Record<string, Pintor> = {
         Los dos grupos se invitan en «Grupos de Telegram».</p>
       <div class="tabla-caja"><table class="tabla t-per"><thead><tr><th>Corto</th><th>Nombre</th><th>Cargo</th><th>Teléfono</th><th>Reportes app</th><th>Com. interna</th><th>Bot</th><th></th></tr></thead><tbody>
       ${vis.map((u) => { const o = enlaceDe.get(u.id); return `<tr class="${u.activo ? '' : 'inactivo'}"><td><b>${esc(u.nombre_corto ?? '')}</b></td><td>${esc(u.nombre)}</td><td class="chica">${esc(u.cargo ?? '')}</td>
-        <td class="nw">${u.telefono ? `<a href="tel:${esc(u.telefono)}">${esc(u.telefono)}</a>` : '<span class="alerta-txt chica">falta</span>'}</td>
+        <td class="nw">${u.telefono ? esc(telVisible(u.telefono)) : '<span class="alerta-txt chica">falta</span>'}</td>
         <td><button class="btn chico sw ${u.reportes_app ? 'si' : ''}" data-tog="${u.id}" data-campo="reportes_app" data-val="${!u.reportes_app}" aria-pressed="${u.reportes_app}">${u.reportes_app ? 'Sí' : 'No'}</button></td>
         <td><button class="btn chico sw ${u.comunicacion_interna ? 'si' : ''}" data-tog="${u.id}" data-campo="comunicacion_interna" data-val="${!u.comunicacion_interna}" aria-pressed="${u.comunicacion_interna}">${u.comunicacion_interna ? 'Sí' : 'No'}</button></td>
         <td class="nw">${o ? (o.vinculado ? '<em class="pill p-verde">Vinculado</em>' : o.enlace ? `<button class="btn chico" data-enlace="${esc(o.enlace)}" data-quien="${esc(o.corto)}" data-tel="${esc(u.telefono ?? '')}">Enviar enlace</button>` : '') : ''}</td>
@@ -208,7 +219,9 @@ const PINTORES: Record<string, Pintor> = {
       const { f, cerrar } = cajon(p ? `Editar: ${esc(p.nombre)}` : 'Agregar oficial o persona', `<form class="bloque" autocomplete="off">
         <label>Nombre completo<input name="nombre" required value="${esc(p?.nombre ?? '')}" placeholder="Nombre(s) y apellidos"></label>
         <div class="rejilla-2"><label>Nombre corto <small>(como aparece en Telegram y el mapa)</small><input name="nombre_corto" required maxlength="24" value="${esc(p?.nombre_corto ?? '')}" placeholder="Ej. J. Pérez"></label>
-          <label>Teléfono celular <small>(10 dígitos, obligatorio)</small><input name="telefono" required inputmode="tel" pattern="[0-9 ()+-]{10,16}" value="${esc(p?.telefono ?? '')}" placeholder="473 123 4567"></label></div>
+          <div class="tel-caja"><label>Lada<select name="lada">${LADAS.map(([k, t]) => `<option value="${k}" ${separarTel(p?.telefono)[0] === k ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
+          <label>Teléfono celular <small>(obligatorio)</small><input name="telefono" required inputmode="tel" value="${esc(separarTel(p?.telefono)[1])}" placeholder="473 123 4567"></label></div></div>
+        <p class="tenue chica">Debe ser el número con el que la persona usa Telegram: así el bot la reconoce al darse de alta.</p>
         <div class="rejilla-2"><label>Cargo<input name="cargo" value="${esc(p?.cargo ?? '')}" placeholder="Ej. Oficial, Cabinero, Bombero"></label>
           <label>Correo <small>(si tendrá cuenta del panel)</small><input type="email" name="email" value="${esc(p?.email ?? '')}"></label></div>
         <label class="fila-check"><span><b>Comunicación interna</b><br><small class="tenue">Oficial: recibe servicios por Telegram privado y aparece en el mapa</small></span><input type="checkbox" name="comunicacion_interna" ${p?.comunicacion_interna ? 'checked' : ''}></label>
@@ -216,8 +229,10 @@ const PINTORES: Record<string, Pintor> = {
         <p class="error-txt" id="per-err" hidden></p><button class="btn primario">${p ? 'Guardar cambios' : 'Agregar'}</button></form>`);
       f.querySelector('form')!.addEventListener('submit', async (e) => {
         e.preventDefault(); const fd = new FormData(e.target as HTMLFormElement); const g = (k: string) => String(fd.get(k) ?? '').trim();
-        const tel = tel10(g('telefono')); const err = f.querySelector<HTMLElement>('#per-err')!;
-        if (tel.length !== 10) { err.textContent = 'El teléfono debe tener 10 dígitos.'; err.hidden = false; return; }
+        const lada = g('lada') || '52', num = g('telefono').replace(/\D/g, '').replace(new RegExp(`^${lada}(?=\\d{8,})`), ''); const err = f.querySelector<HTMLElement>('#per-err')!;
+        if (lada === '52' && num.length !== 10) { err.textContent = 'Para México el teléfono debe tener 10 dígitos.'; err.hidden = false; return; }
+        if (lada !== '52' && (num.length < 6 || num.length > 14)) { err.textContent = 'Revisa el número: sin la lada debe tener entre 6 y 14 dígitos.'; err.hidden = false; return; }
+        const tel = lada === '52' ? num : `+${lada}${num}`;
         const fila = { nombre: g('nombre').replace(/\s+/g, ' '), nombre_corto: g('nombre_corto'), telefono: tel, cargo: g('cargo') || null, email: g('email').toLowerCase() || null,
           comunicacion_interna: fd.get('comunicacion_interna') === 'on', reportes_app: fd.get('reportes_app') === 'on' };
         try { if (p) await actualizar('personal', p.id, fila); else await insertar('personal', { ...fila, activo: true }); cerrar(); c.aviso(p ? 'Datos guardados.' : 'Agregado.'); refrescar(); }
@@ -228,10 +243,10 @@ const PINTORES: Record<string, Pintor> = {
     cont.querySelectorAll<HTMLButtonElement>('[data-editar]').forEach((b) => b.addEventListener('click', () => form(personal.find((y) => y.id === +b.dataset.editar!))));
     cont.querySelectorAll<HTMLButtonElement>('[data-enlace]').forEach((b) => b.addEventListener('click', () => {
       const txt = `Hola ${b.dataset.quien}: abre este enlace UNA vez desde tu Telegram para recibir los servicios de cabina SIMUB: ${b.dataset.enlace}`;
-      const tel = tel10(b.dataset.tel ?? '');
+      const wa = numWa(b.dataset.tel);
       const { f } = cajon(`Enlace del bot · ${esc(b.dataset.quien)}`, `<div class="bloque"><p>Es personal: envíalo por <b>chat privado</b>, no en grupos.</p>
         <textarea rows="4" readonly>${esc(txt)}</textarea><div class="fila-btn">
-        ${tel.length === 10 ? `<a class="btn primario" target="_blank" rel="noopener" href="https://wa.me/52${tel}?text=${encodeURIComponent(txt)}">Enviar por WhatsApp</a>` : ''}
+        ${wa ? `<a class="btn primario" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(txt)}">Enviar por WhatsApp</a>` : ''}
         <button class="btn" id="enl-copiar">Copiar</button><button class="btn" data-x>Cerrar</button></div></div>`);
       f.querySelector('#enl-copiar')!.addEventListener('click', async () => { try { await navigator.clipboard.writeText(txt); c.aviso('Copiado.'); } catch { f.querySelector('textarea')!.select(); } });
     }));
@@ -247,7 +262,7 @@ const PINTORES: Record<string, Pintor> = {
       <p class="tenue chica">Deben estar quienes tienen <b>${criterio} = Sí</b> (${xs.length}). Telegram no permite que un bot agregue personas: se envía a cada quien una
         <b>invitación personal de un solo uso</b>. A quien ya abrió su enlace del bot le llega por Telegram; a los demás, por WhatsApp.</p>
       <form data-inv="${rol}"><div class="of-lista">${xs.map((p) => `<label class="of-item"><input type="checkbox" name="p" value="${p.id}" checked>
-        <span><b>${esc(p.corto)}</b><small>${esc(p.nombre)} · ${esc(p.telefono ?? 'sin teléfono')} · ${p.vinculado ? 'recibe por Telegram' : 'por WhatsApp'}</small></span></label>`).join('')
+        <span><b>${esc(p.corto)}</b><small>${esc(p.nombre)} · ${esc(p.telefono ? telVisible(p.telefono) : 'sin teléfono')} · ${p.vinculado ? 'recibe por Telegram' : 'por WhatsApp'}</small></span></label>`).join('')
         || '<p class="tenue">Nadie marcado todavía (se marca en «Oficiales y personal»).</p>'}</div>
       ${xs.length ? `<div class="fila-btn"><button class="btn primario" ${vinc(rol) ? '' : 'disabled title="Primero vincula el grupo"'}>Enviar invitaciones a los marcados</button></div>` : ''}</form>
       <div data-res="${rol}"></div></section>`;
@@ -272,9 +287,9 @@ const PINTORES: Record<string, Pintor> = {
       try {
         const r = await invitarGrupo(rol, ids);
         cont.querySelector<HTMLElement>(`[data-res="${rol}"]`)!.innerHTML = `<div class="bloque"><b>Invitaciones</b><ul class="aj-inv">${r.resultado.map((x) => {
-          const tel = tel10(x.telefono ?? ''); const msg = `Hola ${x.nombre}: te invitan al grupo de SIMUB. Enlace personal, sirve una vez (7 días): ${x.enlace}`;
+          const wa = numWa(x.telefono); const msg = `Hola ${x.nombre}: te invitan al grupo de SIMUB. Enlace personal, sirve una vez (7 días): ${x.enlace}`;
           return `<li><b>${esc(x.nombre)}</b> · ${x.enviado ? '<span class="ok-txt">enviada por Telegram</span>'
-            : x.enlace ? (tel.length === 10 ? `<a class="btn chico primario" target="_blank" rel="noopener" href="https://wa.me/52${tel}?text=${encodeURIComponent(msg)}">Enviar por WhatsApp</a>` : `<code>${esc(x.enlace)}</code>`)
+            : x.enlace ? (wa ? `<a class="btn chico primario" target="_blank" rel="noopener" href="https://wa.me/${wa}?text=${encodeURIComponent(msg)}">Enviar por WhatsApp</a>` : `<code>${esc(x.enlace)}</code>`)
             : '<span class="alerta-txt">no se pudo crear</span>'}</li>`; }).join('')}</ul></div>`;
         b.disabled = false; b.textContent = 'Enviar invitaciones a los marcados';
       } catch (err) {
