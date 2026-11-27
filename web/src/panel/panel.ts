@@ -8,6 +8,7 @@ import { FORMULARIOS, MOTIVOS_REVISION, ORDEN_TIPOS } from '../formularios';
 import type { Estado } from '../api';
 import { columnas, horizontales } from './graficas';
 import { MESES_TXT } from './catalogo';
+import { vistaAjustes } from './ajustes';
 import { entregarPdf, partePdf } from './pdf';
 import { activarImportar, paseDeLista, tarjetaImportar, vistaCaptura, vistaInformes, vistaMando, vistaServicio, vistaServicios, type Ctx } from './mando';
 import { pararCampo, vistaCampo } from './campo';
@@ -23,7 +24,7 @@ import { activarRespaldo, arrancarSesion, cambioTurno, copiaAutomatica, tarjetaR
 import { clima, pastillaClima, detalleClima } from './clima';
 import {
   accion, actualizar, cerrarRevision, codigos, dbp, detalle, guardarConfig, guardarParte, informe, insertar, proponerFecha,
-  cuentas, desbloquearAcceso, guardarCuenta, oficiales, type Cuenta, type Oficial, mando, reportes, revisiones, servicioDesdeReporte, tabla, urlsFotos, yo, type Detalle, type Informe, type Parte, type Reporte, type Revision, type Yo,
+  claveCambiada, mando, reportes, revisiones, servicioDesdeReporte, tabla, urlsFotos, yo, type Detalle, type Informe, type Parte, type Reporte, type Revision, type Yo,
 } from './datos';
 
 const BASE = import.meta.env.BASE_URL;
@@ -57,8 +58,6 @@ const ERRORES: Record<string, string> = {
   clasificacion_invalida: 'Elige el tipo de servicio.', anulado: 'Este folio está anulado.', texto_vacio: 'Escribe el texto.',
   solo_admin_imp: 'Solo un administrador puede importar.',
 };
-interface Persona { id: number; nombre: string; cargo: string | null; activo: boolean; nombre_corto: string | null; telefono: string | null; email: string | null; comunicacion_interna: boolean; reportes_app: boolean }
-const ROL_CUENTA: Record<string, string> = { admin: 'Admin. Maestro', coordinador: 'Admin (coordinación)', guardia: 'Cabinero', campo: 'Campo (celular de unidad)' };
 const ROL_TXT = { admin: 'Administrador', coordinador: 'Coordinación', guardia: 'Cabina', campo: 'Campo (unidad)' };
 
 let mio: Yo | null = null;
@@ -173,7 +172,7 @@ function pantallaNuevaClave(mensaje = '') {
   limpiar();
   raiz.innerHTML = `<main class="acceso"><form class="caja-acceso" id="form-nueva">
     <img src="${BASE}escudo-192.png" alt="" class="escudo-acc"><h1>Contraseña nueva</h1>
-    <p class="tenue">Usa al menos 8 caracteres. Una frase larga es más segura y fácil de recordar.</p>
+    <p class="tenue">${obligado ? '<b>Es tu primer ingreso:</b> crea tu propia contraseña. La que te entregaron deja de servir. ' : ''}Usa al menos 10 caracteres. Una frase larga es más segura y fácil de recordar.</p>
     ${campoClave('nueva1', 'Contraseña nueva', 'new-password')}${campoClave('nueva2', 'Repítela', 'new-password')}
     ${mensaje ? `<p class="error-txt" role="alert">${esc(mensaje)}</p>` : ''}
     <button class="btn primario" type="submit">Guardar contraseña</button></form></main>`;
@@ -181,15 +180,17 @@ function pantallaNuevaClave(mensaje = '') {
   $('form-nueva').addEventListener('submit', async (e) => {
     e.preventDefault();
     const a = $<HTMLInputElement>('nueva1').value, b = $<HTMLInputElement>('nueva2').value;
-    if (a.length < 8) return pantallaNuevaClave('Debe tener al menos 8 caracteres.');
+    if (a.length < 10) return pantallaNuevaClave('Debe tener al menos 10 caracteres.');
     if (a !== b) return pantallaNuevaClave('Las dos contraseñas no coinciden.');
     const { error } = await dbp.auth.updateUser({ password: a });
-    if (error) return pantallaNuevaClave('No se pudo guardar. El enlace pudo haber vencido: pide otro.');
+    if (error) return pantallaNuevaClave(/same|different/i.test(error.message) ? 'Debe ser distinta a la contraseña que te dieron.' : 'No se pudo guardar. El enlace pudo haber vencido: pide otro.');
+    await claveCambiada().catch(() => {}); obligado = false; recuperando = false;
     history.replaceState(null, '', location.pathname);
     aviso('Contraseña actualizada.'); iniciar();
   });
 }
 let recuperando = false;
+let obligado = false;
 dbp.auth.onAuthStateChange((evento) => { if (evento === 'PASSWORD_RECOVERY') { recuperando = true; pantallaNuevaClave(); } });
 
 async function iniciar() {
@@ -204,6 +205,7 @@ async function iniciar() {
       <button class="btn" id="salir">Salir</button></div></main>`;
     $('salir').addEventListener('click', salir); return;
   }
+  if (mio.cambiar_clave) { obligado = true; pantallaNuevaClave(); return; }
   await arrancarSesion(data.session.user.id);
   ir();
   copiaAutomatica(ctx);
@@ -680,188 +682,6 @@ async function vistaInforme() {
   });
 }
 
-// ================================================================ AJUSTES (admin)
-async function vistaAjustes() {
-  if (mio!.rol !== 'admin') { location.hash = '#mando'; return; }
-  marco('ajustes', 'Ajustes', 'Datos que se muestran en la app, catálogos para el parte de servicio y grupos de Telegram.', '<div id="ajustes" class="ajustes"><p class="tenue">Cargando…</p></div>');
-  const [cfg, unidades, personal, noticias, necesidades, cods] = await Promise.all([
-    tabla<{ clave: string; valor: Record<string, unknown> }>('config_publica', 'clave'), tabla<{ id: number; nombre: string; tipo: string | null; activa: boolean }>('unidades', 'nombre'),
-    tabla<Persona>('personal', 'nombre'),
-    tabla<{ id: string; titulo: string; categoria: string; visible: boolean; destacada: boolean; publicada_en: string }>('noticias', 'publicada_en'),
-    tabla<{ id: number; articulo: string; urgente: boolean; activa: boolean }>('necesidades', 'orden'), codigos().catch(() => [])]);
-  const [colonias, ctas, ofs] = await Promise.all([tabla<{ id: number; nombre: string; tipo: string | null; activa: boolean }>('colonias', 'nombre').catch(() => []),
-    cuentas().catch(() => [] as Cuenta[]), oficiales().catch(() => [] as Oficial[])]);
-  const enlaceDe = new Map(ofs.map((o) => [o.id, o]));
-  const c = Object.fromEntries(cfg.map((x) => [x.clave, x.valor])) as Record<string, Record<string, unknown>>;
-  const campo = (grupo: string, k: string, etq: string, tipo = 'text', ayuda = '') => {
-    const val = c[grupo]?.[k];
-    return tipo === 'textarea' ? `<label>${etq}${ayuda ? ` <small>${ayuda}</small>` : ''}<textarea data-g="${grupo}" data-k="${k}" rows="3">${esc(val ?? '')}</textarea></label>`
-      : tipo === 'checkbox' ? `<label class="fila-check"><span>${etq}</span><input type="checkbox" data-g="${grupo}" data-k="${k}" ${val ? 'checked' : ''}></label>`
-      : `<label>${etq}${ayuda ? ` <small>${ayuda}</small>` : ''}<input data-g="${grupo}" data-k="${k}" value="${esc(Array.isArray(val) ? val.join(', ') : val ?? '')}"></label>`;
-  };
-  const ROL_CHAT: Record<string, string> = { alertas: 'Alertas de reportes', comunicacion: 'Comunicación (noticias y donativos)', respaldo: 'Respaldo (si nadie contesta en 10 min)',
-    interno: 'Comunicación interna (resumen de cada servicio, «Voy», apoyos y entrega de guardia)' };
-  $('ajustes').innerHTML = `
-    <section class="tarjeta"><h3>Grupos de Telegram (@SimubGtoBot)</h3><p class="tenue">Agrega el bot al grupo y un administrador escribe <code>/vincular CÓDIGO</code> dentro del grupo.</p>
-      <table class="tabla"><tbody>${cods.map((x) => `<tr><td>${ROL_CHAT[x.rol] ?? x.rol}</td><td><code>${esc(x.codigo)}</code></td><td>${x.vinculado ? '<em class="pill p-verde">Vinculado</em>' : '<em class="pill p-gris">Sin vincular</em>'}</td></tr>`).join('')}</tbody></table></section>
-    ${tarjetaImportar}
-    ${tarjetaRespaldo()}
-    ${mio!.super ? `<section class="tarjeta peligro"><h3>Preparar para producción (solo desarrollador)</h3>
-      <p class="tenue">Borra los reportes, revisiones y servicios capturados en pruebas. El histórico importado se conserva. Queda en el control interno. No se puede deshacer.</p>
-      <div class="fila-btn"><input id="confirma-limpiar" placeholder="Escribe BORRAR para confirmar"><button class="btn rojo" id="limpiar" type="button">Borrar datos de prueba</button></div></section>` : ''}
-    <form class="tarjeta" id="f-cfg"><h3>Datos de la estación (se ven en la app)</h3>
-      <div class="rejilla-2">${campo('estacion', 'telefono', 'Teléfono de la estación', 'text', '10 dígitos; lo marca el botón «Llamar»')}${campo('estacion', 'horario', 'Horario de atención')}
-      ${campo('estacion', 'direccion', 'Dirección')}${campo('estacion', 'correo', 'Correo de contacto')}</div>
-      ${campo('estacion', 'quienes_somos', 'Quiénes somos', 'textarea')}
-      <h3>Donativos</h3><div class="rejilla-2">${campo('donativos', 'titular', 'Titular de la cuenta')}${campo('donativos', 'banco', 'Banco')}
-      ${campo('donativos', 'clabe', 'CLABE (18 dígitos)')}${campo('donativos', 'concepto', 'Concepto sugerido')}
-      ${campo('donativos', 'enlace_pago', 'Enlace de pago en línea', 'text', 'Mercado Pago, PayPal…')}${campo('donativos', 'montos', 'Montos sugeridos', 'text', 'separados por coma')}
-      ${campo('donativos', 'contacto_recibo', 'Dónde pedir recibo')}${campo('donativos', 'recibo_deducible', 'Emitimos recibo deducible', 'checkbox')}</div>
-      ${campo('donativos', 'voluntariado', 'Voluntariado: requisitos', 'textarea')}
-      <h3>Revisiones de seguridad</h3><div class="rejilla-2">${campo('revisiones', 'dias', 'Días de visita')}${campo('revisiones', 'horario', 'Horario')}${campo('revisiones', 'costo', 'Costo')}</div>
-      <button class="btn primario" type="submit">Guardar datos</button></form>
-    <section class="tarjeta"><h3>Unidades</h3><ul class="cat">${unidades.map((u) => `<li class="${u.activa ? '' : 'inactivo'}"><span>${esc(u.nombre)} <small>${esc(u.tipo ?? '')}</small></span>
-      <button class="btn chico" data-tog="unidades" data-id="${u.id}" data-campo="activa" data-val="${!u.activa}">${u.activa ? 'Desactivar' : 'Activar'}</button></li>`).join('')}</ul>
-      <form class="fila-btn" data-nuevo="unidades"><input name="nombre" placeholder="Ej. Unidad 4" required><input name="tipo" placeholder="Tipo (pipa, rescate…)"><button class="btn">Agregar</button></form></section>
-    <section class="tarjeta"><h3>Cuentas del panel (${ctas.length})</h3>
-      <p class="tenue">Cada persona entra con su correo. <b>Admin. Maestro</b>: todo (informes, voluntariado, control interno, ajustes y corregir partes cerrados).
-        <b>Admin</b> (coordinación): operación, capacitación y unidades. <b>Cabinero</b>: centro de mando, servicios y reportes. <b>Campo</b>: celular de la unidad.
-        Tras 5 contraseñas equivocadas la cuenta se bloquea 30 min y le llega un correo para restablecerla.</p>
-      <div class="tabla-caja"><table class="tabla"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Último acceso</th><th></th></tr></thead><tbody>
-      ${ctas.map((x) => `<tr><td>${esc(x.nombre)}${x.superusuario ? ' <em class="pill p-gris">desarrollador</em>' : ''}</td><td class="chica">${esc(x.email ?? '—')}</td><td>${ROL_CUENTA[x.rol] ?? x.rol}</td>
-        <td class="nw chica">${x.ultimo_acceso ? fecha(x.ultimo_acceso) : 'nunca'}</td><td class="nw">${x.bloqueado ? `<button class="btn chico rojo" data-desbloq="${esc(x.email)}">Desbloquear</button>` : ''}
-        <button class="btn chico" data-cuenta="${x.user_id}">Cambiar</button></td></tr>`).join('') || '<tr><td colspan="5" class="tenue">Sin cuentas.</td></tr>'}</tbody></table></div>
-      <button class="btn" id="cta-nueva" type="button">+ Dar de alta una cuenta</button></section>
-    <section class="tarjeta"><h3>Personal (${personal.filter((x) => x.activo).length} activos)</h3>
-      <p class="tenue chica"><b>Com. interna</b>: oficiales que reciben por Telegram privado el servicio completo (con nombre y teléfono de quien reporta) y pueden aparecer en el mapa de cabina.
-        Cada oficial abre una vez su enlace del bot para quedar vinculado.</p>
-      <div class="tabla-caja"><table class="tabla t-per"><thead><tr><th>Nombre corto</th><th>Nombre</th><th>Cargo</th><th>Reportes app</th><th>Com. interna</th><th>Teléfono</th><th>Telegram</th><th></th></tr></thead><tbody>
-      ${personal.map((u) => { const o = enlaceDe.get(u.id); return `<tr class="${u.activo ? '' : 'inactivo'}"><td><b>${esc(u.nombre_corto ?? '')}</b></td><td>${esc(u.nombre)}</td><td class="chica">${esc(u.cargo ?? '')}</td>
-        <td><button class="btn chico ${u.reportes_app ? 'enviado' : ''}" data-tog="personal" data-id="${u.id}" data-campo="reportes_app" data-val="${!u.reportes_app}">${u.reportes_app ? 'Sí' : 'No'}</button></td>
-        <td><button class="btn chico ${u.comunicacion_interna ? 'enviado' : ''}" data-tog="personal" data-id="${u.id}" data-campo="comunicacion_interna" data-val="${!u.comunicacion_interna}">${u.comunicacion_interna ? 'Sí' : 'No'}</button></td>
-        <td class="nw chica">${esc(u.telefono ?? '')}</td>
-        <td class="nw">${o ? (o.vinculado ? '<em class="pill p-verde">Vinculado</em>' : '') + (o.enlace ? ` <button class="btn chico" data-enlace="${esc(o.enlace)}" data-quien="${esc(o.corto)}">Enlace del bot</button>` : '') : ''}</td>
-        <td><button class="btn chico" data-tog="personal" data-id="${u.id}" data-campo="activo" data-val="${!u.activo}">${u.activo ? 'Baja' : 'Alta'}</button></td></tr>`; }).join('')}</tbody></table></div>
-      <form class="fila-btn" data-nuevo="personal"><input name="nombre" placeholder="Nombre" required><input name="cargo" placeholder="Cargo o rango"><button class="btn">Agregar</button></form>
-      <div class="bloque"><b>Importar la lista de personal (Excel)</b><span class="tenue chica">Columnas: Nombre corto, Nombre, Cargo, Reportes App (si/no), Comunicación interna (si/no), Teléfono y Email. Solo «Nombre» es obligatoria. Actualiza sin duplicar.</span>
-        <div class="fila-btn"><input type="file" id="per-xls" accept=".xlsx,.xlsm"><label class="fila-check2"><input type="checkbox" id="per-baja"> Desactivar a quien ya no aparezca</label><button class="btn" type="button" id="per-imp" disabled>Importar</button></div>
-        <p id="per-res" class="tenue chica"></p></div>
-      <details><summary>Agregar varios a la vez (pegar lista)</summary><form class="bloque" id="f-lote"><label>Un nombre por renglón. Si quieres, agrega el cargo después de una coma: «Juan Pérez, Bombero»
-        <textarea name="lista" rows="6"></textarea></label><button class="btn">Agregar todos</button></form></details></section>
-    <section class="tarjeta"><h3>Colonias y lugares frecuentes (${colonias.filter((x) => x.activa).length})</h3><p class="tenue">Aparecen como sugerencia al escribir el lugar; también se puede escribir uno que no esté.</p>
-      <div class="chips-col">${colonias.filter((x) => x.activa).map((x) => `<span class="chip-col">${esc(x.nombre)}<button type="button" data-tog="colonias" data-id="${x.id}" data-campo="activa" data-val="false" aria-label="Quitar ${esc(x.nombre)}">✕</button></span>`).join('')}</div>
-      <form class="fila-btn" data-nuevo="colonias"><input name="nombre" placeholder="Ej. Col. Nueva" required><select name="tipo"><option>Colonia</option><option>Fraccionamiento</option><option>Comunidad</option><option>Barrio</option><option>Vialidad</option><option>Otro</option></select><button class="btn">Agregar</button></form></section>
-    <section class="tarjeta"><h3>Necesidades en especie</h3><p class="tenue">También se actualizan desde Telegram con /necesidades.</p><ul class="cat">${necesidades.filter((n) => n.activa).map((n) => `<li><span>${esc(n.articulo)} ${n.urgente ? '<em class="pill p-rojo">Urgente</em>' : ''}</span>
-      <span><button class="btn chico" data-tog="necesidades" data-id="${n.id}" data-campo="urgente" data-val="${!n.urgente}">${n.urgente ? 'Normal' : 'Urgente'}</button>
-      <button class="btn chico" data-tog="necesidades" data-id="${n.id}" data-campo="activa" data-val="false">Quitar</button></span></li>`).join('')}</ul>
-      <form class="fila-btn" data-nuevo="necesidades"><input name="articulo" placeholder="Ej. Guantes talla G" required><label class="fila-check"><input type="checkbox" name="urgente"> Urgente</label><button class="btn">Agregar</button></form></section>
-    <section class="tarjeta"><h3>Noticias</h3><p class="tenue">Se publican desde Telegram con /noticia. Aquí puedes ocultarlas o destacarlas.</p>
-      <ul class="cat">${noticias.slice().reverse().slice(0, 20).map((n) => `<li class="${n.visible ? '' : 'inactivo'}"><span>${n.destacada ? '★ ' : ''}${esc(n.titulo)} <small>${fecha(n.publicada_en)}</small></span>
-      <span>${n.visible ? `<button class="btn chico" data-dest="${n.id}">Destacar</button>` : ''}<button class="btn chico" data-tog="noticias" data-id="${n.id}" data-campo="visible" data-val="${!n.visible}">${n.visible ? 'Ocultar' : 'Mostrar'}</button></span></li>`).join('')}</ul></section>`;
-  activarImportar(ctx);
-  $('f-cfg').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const nuevos: Record<string, Record<string, unknown>> = JSON.parse(JSON.stringify(c));
-    raiz.querySelectorAll<HTMLInputElement>('[data-g]').forEach((el) => {
-      const g = el.dataset.g!, k = el.dataset.k!; nuevos[g] ??= {};
-      nuevos[g][k] = el.type === 'checkbox' ? el.checked : k === 'montos' ? el.value.split(',').map((x) => Number(x.trim())).filter((n) => n > 0) : el.value.trim();
-    });
-    try { for (const [g, val] of Object.entries(nuevos)) await guardarConfig(g, val); aviso('Datos guardados. Ya se ven en la app.'); }
-    catch { aviso('No se pudo guardar.', true); }
-  });
-  activarRespaldo(ctx);
-  document.getElementById('limpiar')?.addEventListener('click', async () => {
-    if ($<HTMLInputElement>('confirma-limpiar').value.trim().toUpperCase() !== 'BORRAR') return aviso('Escribe BORRAR para confirmar.', true);
-    const b = $<HTMLButtonElement>('limpiar'); b.disabled = true; b.textContent = 'Borrando…';
-    try { await accion({ accion: 'limpiar' }); aviso('Listo: se borraron los datos de prueba.'); vistaAjustes(); }
-    catch (e) { aviso(ERRORES[(e as Error).message] ?? 'No se pudo borrar.', true); b.disabled = false; b.textContent = 'Borrar datos de prueba'; }
-  });
-  raiz.querySelectorAll<HTMLButtonElement>('[data-tog]').forEach((b) => b.addEventListener('click', async () => {
-    try { await actualizar(b.dataset.tog!, b.dataset.id!, { [b.dataset.campo!]: b.dataset.val === 'true' }); vistaAjustes(); } catch { aviso('No se pudo cambiar.', true); }
-  }));
-  raiz.querySelectorAll<HTMLButtonElement>('[data-dest]').forEach((b) => b.addEventListener('click', async () => {
-    try { for (const n of noticias.filter((x) => x.destacada)) await actualizar('noticias', n.id, { destacada: false });
-      await actualizar('noticias', b.dataset.dest!, { destacada: true }); vistaAjustes(); } catch { aviso('No se pudo cambiar.', true); }
-  }));
-  let listaPer: Record<string, unknown>[] = [];
-  document.getElementById('per-xls')?.addEventListener('change', async (e) => {
-    const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return;
-    try {
-      const { leerExcel } = await import('./excel');
-      const filas = leerExcel(new Uint8Array(await f.arrayBuffer()))[0].filas;
-      const norm = (x: unknown) => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
-      const cab = filas.findIndex((r) => r.some((x) => /^nombre$|^nombre completo/.test(norm(x))) || r.some((x) => /^nombre/.test(norm(x))));
-      const h = filas[cab].map(norm); const col = (re: RegExp) => h.findIndex((x) => re.test(x));
-      const cN = col(/^nombre$|^nombre completo|^nombre\(s\)/) >= 0 ? col(/^nombre$|^nombre completo|^nombre\(s\)/) : col(/^nombre(?! corto)/);
-      const cK = col(/nombre corto|abreviado/), cC = col(/cargo|puesto|rango/), cR = col(/reportes? (de la )?app/), cI = col(/comunicacion interna|com\. interna/),
-        cT = col(/telefono|celular/), cE = col(/e-?mail|correo/);
-      const si = (x: unknown) => /^(si|sí|x|1|true|verdadero)$/i.test(String(x ?? '').trim());
-      listaPer = filas.slice(cab + 1).map((r) => {
-        const f: Record<string, unknown> = { nombre: String(r[cN] ?? '').replace(/\s+/g, ' ').trim() };
-        if (cK >= 0) f.nombre_corto = String(r[cK] ?? '').trim() || null;
-        f.cargo = cC >= 0 ? String(r[cC] ?? '').trim() || null : cN > 0 && cK < 0 ? String(r[cN - 1] ?? '').trim() || null : null;
-        if (cR >= 0) f.reportes_app = si(r[cR]); if (cI >= 0) f.comunicacion_interna = si(r[cI]);
-        if (cT >= 0) f.telefono = String(r[cT] ?? '').replace(/[^\d+]/g, '') || null;
-        if (cE >= 0) f.email = String(r[cE] ?? '').trim().toLowerCase() || null;
-        return f; }).filter((x) => String(x.nombre).length > 1);
-      $('per-res').textContent = `${listaPer.length} personas leídas${cI >= 0 ? ` · ${listaPer.filter((x) => x.comunicacion_interna).length} con comunicación interna` : ''}.`;
-      $<HTMLButtonElement>('per-imp').disabled = !listaPer.length;
-    } catch { $('per-res').textContent = 'No se pudo leer el archivo.'; }
-  });
-  document.getElementById('per-imp')?.addEventListener('click', async () => {
-    const b = $<HTMLButtonElement>('per-imp'); b.disabled = true;
-    const { error } = await dbp.from('personal').upsert(listaPer.map((x) => ({ ...x, activo: true })), { onConflict: 'nombre' });
-    if (error) { aviso('No se pudo importar.', true); b.disabled = false; return; }
-    if ($<HTMLInputElement>('per-baja').checked) {
-      const nombres = new Set(listaPer.map((x) => String(x.nombre)));
-      for (const p of personal.filter((x) => x.activo && !nombres.has(x.nombre))) await actualizar('personal', p.id, { activo: false });
-    }
-    aviso(`Lista de personal actualizada: ${listaPer.length} personas.`); vistaAjustes();
-  });
-  document.getElementById('f-lote')?.addEventListener('submit', async (e) => {
-    e.preventDefault(); const txt = String(new FormData(e.target as HTMLFormElement).get('lista') ?? '');
-    const filas = txt.split(/\n+/).map((l) => l.split(',')).map(([n, ...c]) => ({ nombre: n.trim(), cargo: c.join(',').trim() || null })).filter((x) => x.nombre.length > 2);
-    let ok = 0; for (const f of filas) { try { await insertar('personal', f); ok++; } catch { /* repetido */ } }
-    aviso(`Se agregaron ${ok} de ${filas.length}.`); vistaAjustes();
-  });
-  raiz.querySelectorAll<HTMLButtonElement>('[data-enlace]').forEach((b) => b.addEventListener('click', async () => {
-    const txt = `Hola ${b.dataset.quien}: abre este enlace UNA vez desde tu Telegram para recibir los servicios de cabina SIMUB: ${b.dataset.enlace}`;
-    try { await navigator.clipboard.writeText(txt); aviso('Mensaje con el enlace copiado. Pégalo en un chat privado con el oficial (es personal: no lo compartas en grupos).'); }
-    catch { prompt('Copia este mensaje y envíalo al oficial por privado:', txt); }
-  }));
-  raiz.querySelectorAll<HTMLButtonElement>('[data-desbloq]').forEach((b) => b.addEventListener('click', async () => {
-    try { await desbloquearAcceso(b.dataset.desbloq!); aviso('Cuenta desbloqueada.'); vistaAjustes(); } catch { aviso('No se pudo desbloquear.', true); }
-  }));
-  const formCuenta = (x?: Cuenta) => {
-    document.querySelector('.cajon-fondo')?.remove();
-    const f = document.createElement('div'); f.className = 'cajon-fondo';
-    const sug = Array.from(crypto.getRandomValues(new Uint8Array(12)), (n) => 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'[n % 56]).join('');
-    f.innerHTML = `<aside class="cajon" role="dialog" aria-modal="true"><div class="det-cab"><div><h2>${x ? `Cambiar cuenta: ${esc(x.nombre)}` : 'Alta de cuenta'}</h2></div><button class="btn cerrar-x" data-x aria-label="Cerrar">✕</button></div>
-      <form class="bloque" autocomplete="off">${x ? `<p class="tenue">${esc(x.email ?? '')}</p>` : '<label>Correo<input type="email" name="email" required autocomplete="off"></label>'}
-        <label>Nombre (como aparece en el panel)<input name="nombre" required value="${esc(x?.nombre ?? '')}"></label>
-        <label>Rol<select name="rol">${Object.entries(ROL_CUENTA).map(([k, t]) => `<option value="${k}" ${k === (x?.rol ?? 'guardia') ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
-        <div class="rejilla-2"><label>Cargo<input name="cargo" value="${esc(x?.cargo ?? '')}" placeholder="Ej. Cabinero"></label><label>Unidad (solo rol Campo)<input name="unidad" value="${esc(x?.unidad ?? '')}"></label></div>
-        <label>${x ? 'Contraseña nueva (déjala vacía para no cambiarla)' : 'Contraseña inicial'} <small>mín. 10 caracteres</small><input name="password" class="clave-oculta visible" autocomplete="off" spellcheck="false" ${x ? '' : `value="${sug}" required`} minlength="10"></label>
-        <p class="tenue chica">Entrégala en persona o por el Excel de control con contraseña. Pide que la cambien la primera vez («¿Olvidaste tu contraseña?»).</p>
-        <button class="btn primario">${x ? 'Guardar cambios' : 'Crear cuenta'}</button></form></aside>`;
-    document.body.appendChild(f);
-    f.addEventListener('click', (e) => { if (e.target === f || (e.target as HTMLElement).closest('[data-x]')) f.remove(); });
-    f.querySelector('form')!.addEventListener('submit', async (e) => {
-      e.preventDefault(); const d = Object.fromEntries(new FormData(e.target as HTMLFormElement)) as Record<string, string>;
-      if (!d.password) delete d.password;
-      try { await guardarCuenta({ ...d, user_id: x?.user_id }); f.remove(); aviso(x ? 'Cuenta actualizada.' : 'Cuenta creada.'); vistaAjustes(); }
-      catch (err) { aviso((err as Error).message === 'ya_existe' ? 'Ese correo ya tiene cuenta.' : 'No se pudo guardar la cuenta.', true); }
-    });
-  };
-  document.getElementById('cta-nueva')?.addEventListener('click', () => formCuenta());
-  raiz.querySelectorAll<HTMLButtonElement>('[data-cuenta]').forEach((b) => b.addEventListener('click', () => formCuenta(ctas.find((x) => x.user_id === b.dataset.cuenta))));
-  raiz.querySelectorAll<HTMLFormElement>('[data-nuevo]').forEach((f) => f.addEventListener('submit', async (e) => {
-    e.preventDefault(); const fd = new FormData(f); const fila: Record<string, unknown> = {};
-    fd.forEach((v, k) => { fila[k] = k === 'urgente' ? true : String(v).trim(); });
-    try { await insertar(f.dataset.nuevo!, fila); vistaAjustes(); } catch { aviso('No se pudo agregar (¿ya existe?).', true); }
-  }));
-}
-
 // ---------------------------------------------------------------- rutas
 function ir() {
   limpiar();
@@ -889,7 +709,7 @@ function ir() {
     case 'informe': return vistaInformes(ctx, 'mes');
     case 'anual': return vistaInformes(ctx, 'anio');
     case 'app': return vistaInforme();
-    case 'ajustes': return vistaAjustes();
+    case 'ajustes': return vistaAjustes(ctx, arg);
     default: return vistaReportes(arg);
   }
 }

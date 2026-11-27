@@ -95,7 +95,7 @@ export async function vistaMando(c: Ctx) {
   await catalogo().catch(() => c.aviso('No se pudo cargar el catálogo de servicios.', true));
   let m: Mando | null = null;
   const pintar = () => {
-    if (!m) return;
+    if (!m || !document.getElementById('m-servicios')) return;   // ya se cambió de vista
     $('m-act').textContent = `Actualizado ${hora(new Date().toISOString())} · ${m.hoy} servicios hoy`;
     $('m-tit').textContent = `Servicios activos (${m.servicios.length})`;
     const n = document.getElementById('n-mando'); if (n) n.textContent = m.servicios.length ? String(m.servicios.length) : '';
@@ -139,7 +139,7 @@ export async function vistaMando(c: Ctx) {
             ${(s.enviado_oficial ?? []).length ? `<small class="tenue">✔ ${esc(s.enviado_oficial!.join(', '))}</small>` : ''}${s.enviado_interno ? '<small class="tenue">✔ grupo interno</small>' : ''}</div></footer></article>`;
     }).join('') : `<div class="vacio-m">${I.check(40)}<b>Sin servicios activos</b><span>Captura aquí cada salida: llamadas, radio, 911, app o servicios de rutina.</span></div>`;
   };
-  const cargar = async () => { try { m = await mando(); pintar(); } catch { $('m-act').innerHTML = '<span class="alerta-txt">Sin conexión con el servidor</span>'; } };
+  const cargar = async () => { try { m = await mando(); pintar(); } catch { const e = document.getElementById('m-act'); if (e) e.innerHTML = '<span class="alerta-txt">Sin conexión con el servidor</span>'; } };
   // El escuchador vive en el marco de esta vista: al cambiar de sección se descarta junto con él.
   c.raiz.querySelector('.marco')!.addEventListener('click', async (e) => {
     const b = (e.target as HTMLElement).closest('button'); if (!b) return;

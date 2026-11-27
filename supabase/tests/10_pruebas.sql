@@ -301,4 +301,21 @@ do $$ declare a jsonb; r jsonb; cod text; i int; v text; begin
   perform pg_temp.ok(exists (select 1 from auditoria where accion = 'edicion_autorizada'), 'autorización en control interno');
 end $$;
 
+-- 16. Ajustes: cambio de contraseña obligatorio, baja de personas y miembros de grupos
+do $$ declare r jsonb; i int; begin
+  update miembros_panel set cambiar_clave = true where user_id = '44444444-4444-4444-8444-444444444444';
+  perform pg_temp.como('44444444-4444-4444-8444-444444444444');
+  perform pg_temp.ok((panel_yo()->>'cambiar_clave')::boolean, 'debe cambiar contraseña');
+  perform panel_clave_cambiada();
+  perform pg_temp.ok(not (panel_yo()->>'cambiar_clave')::boolean, 'contraseña cambiada');
+  select id into i from personal where nombre = 'Oficial de Prueba';
+  begin perform panel_borrar_persona(i); perform pg_temp.ok(false, 'cabina no borra personal'); exception when insufficient_privilege then null; end;
+  perform pg_temp.ok(panel_miembros_grupos() is null, 'cabina no ve miembros de grupos');
+  perform pg_temp.como('66666666-6666-4666-8666-666666666666');
+  r := panel_miembros_grupos();
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r->'interno') x where x->>'corto' = 'O. Prueba'), 'oficial en grupo interno');
+  perform panel_borrar_persona(i);
+  perform pg_temp.ok(not exists (select 1 from personal where id = i) and exists (select 1 from auditoria where accion = 'persona_borrada'), 'persona borrada y auditada');
+end $$;
+
 \echo 'TODAS LAS PRUEBAS DE SIMUB PASARON'

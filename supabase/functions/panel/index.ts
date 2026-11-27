@@ -1,6 +1,6 @@
 // Acciones del panel que también tocan Telegram o los avisos:
 // cambiar estado / deshacer (mismas reglas que el bot) y notificar cambios en revisiones.
-import { CORS, db, json } from '../_shared/servicios.ts';
+import { chatDe, CORS, db, json, tg } from '../_shared/servicios.ts';
 import { ES_CIERRE, escapar, fechaMx, type Estado } from '../_shared/mensajes.ts';
 import { actualizarAlerta, avisarRevision, datosAlerta, enviarAlerta, pedirParte, primeraFoto } from '../_shared/alerta.ts';
 import { enviarAvisos } from '../_shared/avisos.ts';
@@ -67,11 +67,48 @@ Deno.serve(async (req) => {
       const { error } = await db.auth.admin.updateUserById(uid, { password: String(b.password) });
       if (error) return json({ error: error.message }, 409);
     }
-    const { error: e2 } = await db.from('miembros_panel').upsert({ user_id: uid, rol: b.rol, nombre: String(b.nombre).trim(), cargo: b.cargo || null, unidad: b.unidad || null });
+    const fila: Record<string, unknown> = { user_id: uid, rol: b.rol, nombre: String(b.nombre).trim(), cargo: b.cargo || null, unidad: b.unidad || null };
+    if (b.password && uid !== u.id) fila.cambiar_clave = true;   // contraseña puesta por el admin: se cambia al primer ingreso
+    const { error: e2 } = await db.from('miembros_panel').upsert(fila);
     if (e2) return json({ error: e2.message }, 409);
     await db.from('auditoria').insert({ user_id: u.id, quien: actor, accion: b.user_id ? 'cuenta_cambiada' : 'cuenta_creada', tabla: 'miembros_panel', registro: uid,
       detalle: { nombre: b.nombre, rol: b.rol, contrasena_cambiada: Boolean(b.password) } });
     return json({ ok: true, user_id: uid });
+  }
+  if (b.accion === 'cuenta_borrar') {   // baja de una cuenta del panel (no la propia ni la del desarrollador)
+    const { data: yo } = await db.from('miembros_panel').select('rol, superusuario').eq('user_id', u.id).maybeSingle();
+    if (yo?.rol !== 'admin' && !yo?.superusuario) return json({ error: 'solo_admin' }, 403);
+    if (typeof b.user_id !== 'string' || b.user_id === u.id) return json({ error: 'datos' }, 400);
+    const { data: m } = await db.from('miembros_panel').select('nombre, rol, superusuario').eq('user_id', b.user_id).maybeSingle();
+    if (m?.superusuario) return json({ error: 'protegida' }, 409);
+    await db.from('miembros_panel').delete().eq('user_id', b.user_id);
+    await db.auth.admin.deleteUser(b.user_id).catch(() => null);
+    await db.from('auditoria').insert({ user_id: u.id, quien: actor, accion: 'cuenta_borrada', tabla: 'miembros_panel', registro: b.user_id, detalle: m ?? {} });
+    return json({ ok: true });
+  }
+  if (b.accion === 'invitar') {   // invitación de un solo uso al grupo, por Telegram privado a los vinculados
+    const { data: yo } = await db.from('miembros_panel').select('rol, superusuario').eq('user_id', u.id).maybeSingle();
+    if (yo?.rol !== 'admin' && !yo?.superusuario) return json({ error: 'solo_admin' }, 403);
+    if (!['alertas', 'interno'].includes(b.grupo) || !Array.isArray(b.personas) || !b.personas.length) return json({ error: 'datos' }, 400);
+    const chat = await chatDe(b.grupo); if (!chat) return json({ error: 'sin_grupo' }, 409);
+    const NOM: Record<string, string> = { alertas: 'Reportes de la app SIMUB', interno: 'Comunicación interna SIMUB' };
+    const { data: ps } = await db.from('personal').select('id, nombre, nombre_corto, telefono, tg_chat_id').in('id', b.personas.map(Number));
+    const res: { nombre: string; enlace: string | null; enviado: boolean; telefono: string | null }[] = [];
+    for (const p of ps ?? []) {
+      const nombre = p.nombre_corto ?? p.nombre;
+      const r = await tg('createChatInviteLink', { chat_id: chat, name: nombre.slice(0, 32), member_limit: 1, expire_date: Math.floor(Date.now() / 1000) + 7 * 86400 });
+      const enlace: string | null = r.ok ? r.result.invite_link : null;
+      let enviado = false;
+      if (enlace && p.tg_chat_id) {
+        const m = await tg('sendMessage', { chat_id: p.tg_chat_id, text: `Te invitan al grupo «${NOM[b.grupo]}». El enlace es personal y sirve una sola vez (7 días):`,
+          reply_markup: { inline_keyboard: [[{ text: 'Unirme al grupo', url: enlace }]] } });
+        enviado = Boolean(m.ok);
+      }
+      res.push({ nombre, enlace, enviado, telefono: p.telefono });
+    }
+    await db.from('auditoria').insert({ user_id: u.id, quien: actor, accion: 'invitaciones_grupo', tabla: 'chats', registro: b.grupo, detalle: { personas: res.map((x) => x.nombre) } });
+    if (res.length && res.every((x) => !x.enlace)) return json({ error: 'bot_sin_permiso' }, 409);
+    return json({ ok: true, resultado: res });
   }
   if (b.accion === 'apoyo') {
     if (typeof b.servicio !== 'string' || !String(b.texto ?? '').trim()) return json({ error: 'datos' }, 400);

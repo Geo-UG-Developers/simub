@@ -8,7 +8,7 @@ export const dbp = createClient(SUPABASE_URL, SUPABASE_KEY, {
 });
 
 export type Rol = 'admin' | 'coordinador' | 'guardia' | 'campo';
-export interface Yo { rol: Rol; nombre: string; cargo: string | null; super: boolean; alertas_vinculado: boolean; unidad?: string | null }
+export interface Yo { rol: Rol; nombre: string; cargo: string | null; super: boolean; alertas_vinculado: boolean; unidad?: string | null; cambiar_clave?: boolean }
 export interface Reporte {
   id: string; folio: string; tipo: Tipo; estado: Estado; lat: number; lon: number; referencia: string | null;
   detalles: { resumen?: string[] }; creado_en: string; actualizado_en: string; escalado: boolean; num_fotos: number;
@@ -221,7 +221,7 @@ export interface Oficial { id: number; nombre: string; corto: string; cargo: str
 export const oficiales = () => rpc<Oficial[]>('panel_oficiales');
 export const enviarOficial = (servicio: string, ids: number[]) => accion({ accion: 'oficial', servicio, oficiales: ids }) as unknown as Promise<{ enviados: string[]; sin_telegram: string[] }>;
 export const enviarInterno = (servicio: string) => accion({ accion: 'interno', servicio });
-export interface Cuenta { user_id: string; nombre: string; rol: Rol; cargo: string | null; unidad: string | null; superusuario: boolean; email: string | null; ultimo_acceso: string | null; bloqueado: boolean }
+export interface Cuenta { user_id: string; nombre: string; rol: Rol; cargo: string | null; unidad: string | null; superusuario: boolean; email: string | null; ultimo_acceso: string | null; bloqueado: boolean; cambiar_clave?: boolean }
 export const cuentas = () => rpc<Cuenta[]>('panel_cuentas');
 export const desbloquearAcceso = (email: string) => rpc('panel_desbloquear_acceso', { p_email: email });
 export const guardarCuenta = (c: Record<string, unknown>) => accion({ accion: 'cuenta', ...c });
@@ -241,3 +241,11 @@ export async function autorizarEdicion(servicioId: string, email: string, clave:
     return error ? 'No se pudo registrar la autorización.' : null;
   } finally { await temp.auth.signOut({ scope: 'local' }).catch(() => {}); }
 }
+
+export const borrarCuenta = (user_id: string) => accion({ accion: 'cuenta_borrar', user_id });
+export const borrarPersona = (id: number) => rpc('panel_borrar_persona', { p_id: id });
+export const claveCambiada = () => rpc('panel_clave_cambiada');
+export interface MiembroGrupo { id: number; nombre: string; corto: string; telefono: string | null; vinculado: boolean }
+export const miembrosGrupos = () => rpc<{ alertas: MiembroGrupo[]; interno: MiembroGrupo[] }>('panel_miembros_grupos');
+export const invitarGrupo = (grupo: 'alertas' | 'interno', personas: number[]) =>
+  accion({ accion: 'invitar', grupo, personas }) as unknown as Promise<{ resultado: { nombre: string; enlace: string | null; enviado: boolean; telefono: string | null }[] }>;
