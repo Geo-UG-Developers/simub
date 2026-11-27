@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
       if (error) return json({ error: error.message }, 409);
     }
     const fila: Record<string, unknown> = { user_id: uid, rol: b.rol, nombre: String(b.nombre).trim(), cargo: b.cargo || null, unidad: b.unidad || null };
-    if (b.password && uid !== u.id) fila.cambiar_clave = true;   // contraseña puesta por el admin: se cambia al primer ingreso
+    fila.cambiar_clave = false;   // contraseñas fijas: solo el Admin. Maestro las asigna
     const { error: e2 } = await db.from('miembros_panel').upsert(fila);
     if (e2) return json({ error: e2.message }, 409);
     await db.from('auditoria').insert({ user_id: u.id, quien: actor, accion: b.user_id ? 'cuenta_cambiada' : 'cuenta_creada', tabla: 'miembros_panel', registro: uid,

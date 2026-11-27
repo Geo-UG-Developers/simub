@@ -1,10 +1,9 @@
 // Inicio de sesión del panel con límite de intentos: 5 contraseñas equivocadas → bloqueo de 30 minutos
-// y se envía al correo del usuario el enlace para restablecer su contraseña.
-import { CORS, db, json } from '../_shared/servicios.ts';
+// y se avisa por Telegram al Admin. Maestro (las contraseñas son fijas: no se manda enlace para cambiarla).
+import { CORS, db, json, tg } from '../_shared/servicios.ts';
 
 const URL_SB = Deno.env.get('SUPABASE_URL')!;
 const ANON = Deno.env.get('SUPABASE_ANON_KEY')!;
-const PANEL = 'https://geo-ug-developers.github.io/simub/panel.html';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
@@ -19,9 +18,11 @@ Deno.serve(async (req) => {
   if (r.ok && s.access_token) { await db.rpc('acceso_registrar', { p_email: email, p_ok: true }); return json({ ok: true, sesion: s }); }
   const { data: reg } = await db.rpc('acceso_registrar', { p_email: email, p_ok: false });
   if (reg?.bloqueado) {
-    // aviso por correo: el enlace de «restablecer contraseña» de Supabase (si la cuenta existe)
-    await fetch(`${URL_SB}/auth/v1/recover?redirect_to=${encodeURIComponent(PANEL)}`, {
-      method: 'POST', headers: { apikey: ANON, 'content-type': 'application/json' }, body: JSON.stringify({ email }) }).catch(() => {});
+    const { data: admins } = await db.rpc('admins_telegram');
+    for (const chat of (admins as number[] | null) ?? []) {
+      await tg('sendMessage', { chat_id: chat, parse_mode: 'HTML',
+        text: `⚠️ <b>Cuenta del panel bloqueada</b> 30 min por 5 contraseñas equivocadas: <code>${email.replace(/[<>&]/g, '')}</code>.\nSi no fue esa persona, cambia su contraseña en Ajustes › Cuentas.` }).catch(() => null);
+    }
     return json({ error: 'bloqueado', aviso: true }, 423);
   }
   return json({ error: 'credenciales', restantes: Math.max(0, 5 - Number(reg?.fallos ?? 0)) }, 401);

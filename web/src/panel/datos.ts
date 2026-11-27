@@ -213,7 +213,7 @@ export async function entrar(email: string, clave: string, cliente = dbp): Promi
   return error || !data.user ? { ok: false, error: 'servidor' } : { ok: true, user_id: data.user.id };
 }
 export const textoAcceso = (r: ResultadoAcceso) => r.ok ? '' : r.error === 'bloqueado'
-  ? 'Cuenta bloqueada 30 minutos por 5 intentos fallidos. Se envió un aviso a su correo para restablecer la contraseña; el Admin. Maestro puede desbloquearla en Ajustes.'
+  ? 'Cuenta bloqueada 30 minutos por 5 intentos fallidos. Se avisó al Admin. Maestro; él puede desbloquearla en Ajustes.'
   : r.error === 'credenciales' ? `Correo o contraseña incorrectos.${r.restantes != null ? ` Quedan ${r.restantes} intento(s) antes del bloqueo.` : ''}`
   : r.error === 'red' ? 'Sin conexión. Revisa el internet.' : 'No se pudo verificar. Intenta de nuevo.';
 

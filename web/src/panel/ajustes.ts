@@ -106,11 +106,11 @@ const PINTORES: Record<string, Pintor> = {
     cont.innerHTML = `<section class="tarjeta"><div class="aj-barra"><h3>Cuentas del panel (${ctas.length})</h3>
         <input type="search" id="cta-q" placeholder="Buscar nombre o correo" value="${esc(buscaCta)}"><button class="btn primario" id="cta-nueva">${I.mas(16)} Dar de alta</button></div>
       <p class="tenue chica"><b>Admin. Maestro</b>: todo (informes, voluntariado, control interno, ajustes y corregir partes cerrados). <b>Admin</b>: operación, unidades y capacitación.
-        <b>Cabinero</b>: centro de mando, servicios y reportes. <b>Campo</b>: celular de una unidad. Con 5 contraseñas equivocadas la cuenta se bloquea 30 min.</p>
+        <b>Cabinero</b>: centro de mando, servicios y reportes. <b>Campo</b>: celular de una unidad. Las contraseñas son fijas y solo se cambian aquí. Con 5 contraseñas equivocadas la cuenta se bloquea 30 min y se avisa al Admin. Maestro.</p>
       <div class="tabla-caja"><table class="tabla"><thead><tr><th>Nombre</th><th>Correo (usuario)</th><th>Rol</th><th>Último acceso</th><th>Estado</th><th></th></tr></thead><tbody>
       ${vis.map((x) => `<tr><td><b>${esc(x.nombre)}</b>${x.superusuario ? ' <em class="pill p-gris">desarrollador</em>' : ''}</td><td class="chica">${esc(x.email ?? '—')}</td>
         <td>${ROL_CUENTA[x.rol] ?? x.rol}</td><td class="nw chica">${x.ultimo_acceso ? fecha(x.ultimo_acceso) : 'nunca'}</td>
-        <td>${x.bloqueado ? '<em class="pill p-rojo">Bloqueada</em>' : x.cambiar_clave ? '<em class="pill p-ambar">Debe cambiar contraseña</em>' : '<em class="pill p-verde">Activa</em>'}</td>
+        <td>${x.bloqueado ? '<em class="pill p-rojo">Bloqueada</em>' : '<em class="pill p-verde">Activa</em>'}</td>
         <td class="nw aj-acc">${x.bloqueado ? `<button class="btn chico" data-desbloq="${esc(x.email)}">Desbloquear</button>` : ''}
           <button class="btn chico" data-cuenta="${x.user_id}">Editar</button>
           ${x.user_id !== miId && !x.superusuario ? `<button class="btn chico btn-borrar" data-borrar-cta="${x.user_id}">Borrar</button>` : ''}</td></tr>`).join('')
@@ -140,7 +140,7 @@ const PINTORES: Record<string, Pintor> = {
         <div class="rejilla-2"><label>Cargo<input name="cargo" value="${esc(x?.cargo ?? '')}" placeholder="Ej. Cabinero"></label><label>Unidad <small>(solo rol Campo)</small><input name="unidad" value="${esc(x?.unidad ?? '')}"></label></div>
         <label>${x ? 'Contraseña nueva <small>(vacía = no cambia)</small>' : 'Contraseña inicial'} <small>mín. 10 caracteres</small>
           <input name="password" class="clave-oculta visible" autocomplete="off" spellcheck="false" ${x ? '' : `value="${sug}" required`} minlength="10"></label>
-        <p class="tenue chica">Al entrar por primera vez con una contraseña puesta aquí, el sistema le pide crear la suya.</p>
+        <p class="tenue chica">La contraseña es fija: la persona no la puede cambiar. Solo el Admin. Maestro la asigna o la cambia aquí.</p>
         <button class="btn primario">${x ? 'Guardar cambios' : 'Crear cuenta'}</button></form>`);
       f.querySelector<HTMLSelectElement>('#cta-de')?.addEventListener('change', (e) => {
         const p = per.find((y) => y.id === +(e.target as HTMLSelectElement).value); if (!p) return;

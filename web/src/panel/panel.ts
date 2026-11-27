@@ -144,20 +144,11 @@ function pantallaAcceso(mensaje = '', ok = '') {
     ${mensaje ? `<p class="error-txt" role="alert">${esc(mensaje)}</p>` : ''}
     ${ok ? `<p class="ok-txt" role="status">${esc(ok)}</p>` : ''}
     <button class="btn primario" type="submit">Entrar</button>
-    <button class="enlace-btn" type="button" id="olvide">¿Olvidaste tu contraseña?</button>
+    <p class="tenue chica">¿Olvidaste tu contraseña? Pídela al Admin. Maestro: las contraseñas solo las asigna y cambia él.</p>
     <p class="tenue chica">Las cuentas las da de alta el administrador de SIMUB.</p>
     <p class="credito"><img src="${BASE}geoug.png" alt=""> GEO UG Developers</p>
   </form></main>`;
   activarVerClave();
-  $('olvide').addEventListener('click', async () => {
-    const correoTxt = $<HTMLInputElement>('correo').value.trim();
-    if (!correoTxt) return pantallaAcceso('Escribe tu correo arriba y vuelve a tocar «¿Olvidaste tu contraseña?».');
-    const { error } = await dbp.auth.resetPasswordForEmail(correoTxt, { redirectTo: URL_PANEL });
-    if (error) return pantallaAcceso(/rate|limit/i.test(error.message)
-      ? 'Se enviaron demasiados correos. Espera una hora o pide al administrador que cambie tu contraseña.'
-      : 'No se pudo enviar el correo. Pide al administrador que cambie tu contraseña.');
-    pantallaAcceso('', 'Si el correo está dado de alta, te llegará un enlace para crear una contraseña nueva. Revisa también «Spam».');
-  });
   $('form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const b = (e.target as HTMLFormElement).querySelector<HTMLButtonElement>('button[type=submit]')!; b.disabled = true; b.textContent = 'Verificando…';
@@ -205,7 +196,6 @@ async function iniciar() {
       <button class="btn" id="salir">Salir</button></div></main>`;
     $('salir').addEventListener('click', salir); return;
   }
-  if (mio.cambiar_clave) { obligado = true; pantallaNuevaClave(); return; }
   await arrancarSesion(data.session.user.id);
   ir();
   copiaAutomatica(ctx);
